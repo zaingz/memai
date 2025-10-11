@@ -1,5 +1,4 @@
-import { promisify } from "util";
-import { exec as execCallback } from "child_process";
+import { spawn } from "child_process";
 import fs from "fs";
 import log from "encore.dev/log";
 import { audioFilesBucket } from "../storage";
@@ -8,7 +7,31 @@ import parsePodcast from "node-podcast-parser";
 import ogs from "open-graph-scraper";
 import fuzzysort from "fuzzysort";
 
-const exec = promisify(execCallback);
+// Configuration constants
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB limit
+const DOWNLOAD_TIMEOUT = 120000; // 2 minutes
+const FETCH_TIMEOUT = 30000; // 30 seconds for HTTP requests
+const MIN_FUZZY_MATCH_SCORE = -1000; // Minimum score for episode matching
+
+/**
+ * Fetch with timeout support
+ */
+async function fetchWithTimeout(url: string, timeoutMs = FETCH_TIMEOUT): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeout);
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms: ${url}`);
+    }
+    throw error;
+  }
+}
 
 /**
  * Service for downloading podcast audio and uploading to Encore bucket
@@ -88,6 +111,7 @@ export class PodcastDownloaderService {
     try {
       const { result, error: ogsError } = await ogs({
         url: episodeUrl,
+        timeout: 10000, // 10 second timeout
         fetchOptions: {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -141,10 +165,10 @@ export class PodcastDownloaderService {
     rssFeedUrl: string,
     episodeTitle: string
   ): Promise<string> {
-    // Fetch RSS feed
-    const response = await fetch(rssFeedUrl);
+    // Fetch RSS feed with timeout
+    const response = await fetchWithTimeout(rssFeedUrl);
     if (!response.ok) {
-      throw new Error(`Failed to fetch RSS feed: ${response.statusText}`);
+      throw new Error(`Failed to fetch RSS feed: ${response.status} ${response.statusText}`);
     }
 
     const xmlData = await response.text();
@@ -180,12 +204,22 @@ export class PodcastDownloaderService {
       return latestEpisode.enclosure.url;
     }
 
-    // Fuzzy match episode title
+    // Fuzzy match episode title with minimum score threshold
     const episodeTitles = podcast.episodes.map((ep) => ep.title);
-    const results = fuzzysort.go(episodeTitle, episodeTitles);
+    const results = fuzzysort.go(episodeTitle, episodeTitles, {
+      threshold: MIN_FUZZY_MATCH_SCORE,
+      limit: 5, // Get top 5 matches for logging
+    });
 
-    if (results.length === 0) {
-      throw new Error(`Episode "${episodeTitle}" not found in RSS feed`);
+    if (results.length === 0 || results[0].score < MIN_FUZZY_MATCH_SCORE) {
+      log.warn("No good episode match found", {
+        searchTitle: episodeTitle,
+        availableTitles: episodeTitles.slice(0, 5),
+        bestScore: results[0]?.score,
+      });
+      throw new Error(
+        `Episode "${episodeTitle}" not found in RSS feed (no close matches)`
+      );
     }
 
     // Get best match (highest score)
@@ -201,6 +235,10 @@ export class PodcastDownloaderService {
       matchedTitle: matchedEpisode.title,
       score: results[0].score,
       audioUrl: matchedEpisode.enclosure.url,
+      alternativeMatches: results.slice(1, 3).map(r => ({
+        title: r.target,
+        score: r.score
+      })),
     });
 
     return matchedEpisode.enclosure.url;
@@ -208,7 +246,7 @@ export class PodcastDownloaderService {
 
   /**
    * Downloads audio from direct URL to temp file, uploads to bucket, and cleans up
-   * Mirrors the upload pattern used in YouTubeDownloaderService
+   * Secure implementation using spawn to prevent command injection
    * @param audioUrl - Direct URL to audio file
    * @param bookmarkId - Bookmark ID for unique bucket key
    * @returns Bucket key for uploaded audio
@@ -221,6 +259,19 @@ export class PodcastDownloaderService {
     const tempPath = `/tmp/podcast-${bookmarkId}.mp3`;
     const bucketKey = `audio-${bookmarkId}-podcast.mp3`;
 
+    // Validate URL format and protocol
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(audioUrl);
+    } catch {
+      throw new Error(`Invalid audio URL format: ${audioUrl}`);
+    }
+
+    // Only allow HTTP/HTTPS to prevent file:// or other protocol exploits
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new Error(`Unsupported protocol: ${parsedUrl.protocol}. Only HTTP(S) allowed.`);
+    }
+
     log.info("Downloading podcast audio", {
       audioUrl,
       bookmarkId,
@@ -229,14 +280,8 @@ export class PodcastDownloaderService {
     });
 
     try {
-      // Download audio with curl (podcast audio URLs are direct MP3 links)
-      const { stdout, stderr } = await exec(
-        `curl -L -o "${tempPath}" "${audioUrl}"`
-      );
-
-      if (stderr) {
-        log.warn("curl stderr output", { stderr });
-      }
+      // Download with spawn (avoids shell injection)
+      await this.downloadWithCurl(audioUrl, tempPath);
 
       // Verify file was downloaded
       if (!fs.existsSync(tempPath)) {
@@ -244,6 +289,20 @@ export class PodcastDownloaderService {
       }
 
       const fileSize = fs.statSync(tempPath).size;
+
+      // Validate file size
+      if (fileSize === 0) {
+        fs.unlinkSync(tempPath);
+        throw new Error('Downloaded file is empty');
+      }
+
+      if (fileSize > MAX_FILE_SIZE) {
+        fs.unlinkSync(tempPath);
+        throw new Error(
+          `Audio file too large: ${(fileSize / 1024 / 1024).toFixed(2)}MB (max ${MAX_FILE_SIZE / 1024 / 1024}MB)`
+        );
+      }
+
       log.info("Audio download completed, uploading to bucket", {
         bookmarkId,
         tempPath,
@@ -251,7 +310,7 @@ export class PodcastDownloaderService {
         bucketKey,
       });
 
-      // Upload to Encore bucket (same pattern as YouTube)
+      // Upload to Encore bucket (file size already validated)
       const audioBuffer = fs.readFileSync(tempPath);
       await audioFilesBucket.upload(bucketKey, audioBuffer, {
         contentType: "audio/mpeg",
@@ -260,7 +319,7 @@ export class PodcastDownloaderService {
       log.info("Audio uploaded to bucket", {
         bookmarkId,
         bucketKey,
-        size: audioBuffer.length,
+        size: fileSize,
       });
 
       // Clean up temp file
@@ -285,5 +344,45 @@ export class PodcastDownloaderService {
         `Failed to download podcast audio: ${error instanceof Error ? error.message : String(error)}`
       );
     }
+  }
+
+  /**
+   * Downloads file using curl via spawn (secure, no shell injection)
+   * @param url - URL to download
+   * @param outputPath - Where to save the file
+   */
+  private downloadWithCurl(url: string, outputPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // Use spawn with array arguments (no shell interpretation)
+      const curl = spawn('curl', [
+        '-L',              // Follow redirects
+        '-f',              // Fail on HTTP errors
+        '--max-time', String(DOWNLOAD_TIMEOUT / 1000), // Timeout in seconds
+        '--max-filesize', String(MAX_FILE_SIZE),        // Max file size
+        '-o', outputPath,  // Output file
+        url                // URL (passed as separate argument, not interpolated)
+      ]);
+
+      let stderr = '';
+
+      curl.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      curl.on('error', (error) => {
+        reject(new Error(`curl spawn error: ${error.message}`));
+      });
+
+      curl.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`curl exited with code ${code}: ${stderr}`));
+        } else {
+          if (stderr) {
+            log.debug("curl stderr output", { stderr });
+          }
+          resolve();
+        }
+      });
+    });
   }
 }

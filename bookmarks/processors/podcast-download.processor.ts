@@ -24,7 +24,23 @@ async function handlePodcastDownload(event: PodcastDownloadEvent) {
   try {
     log.info("Stage 1: Starting podcast download", { bookmarkId, url });
 
-    // Mark as processing
+    // Check current status for idempotency (handle duplicate events)
+    const existing = await transcriptionRepo.findByBookmarkId(bookmarkId);
+
+    if (!existing) {
+      throw new Error(`No transcription record found for bookmark ${bookmarkId}`);
+    }
+
+    // Skip if already processing/completed
+    if (existing.status !== 'pending') {
+      log.warn("Transcription already processed, skipping duplicate event", {
+        bookmarkId,
+        currentStatus: existing.status,
+      });
+      return; // Idempotent return
+    }
+
+    // Mark as processing (only if still pending)
     await transcriptionRepo.markAsProcessing(bookmarkId);
 
     // Download audio and upload to bucket

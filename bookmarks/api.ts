@@ -20,6 +20,7 @@ import { podcastDownloadTopic } from "./events/podcast-download.events";
 import { BookmarkRepository } from "./repositories/bookmark.repository";
 import { TranscriptionRepository } from "./repositories/transcription.repository";
 import { Transcription } from "./types/domain.types";
+import { parsePodcastUrl } from "./utils/podcast-url.util";
 
 // Initialize repositories
 const bookmarkRepo = new BookmarkRepository(db);
@@ -52,6 +53,16 @@ export const create = api(
     // Validate required fields
     if (!req.url || !req.source || !req.client_time) {
       throw APIError.invalidArgument("url, source, and client_time are required");
+    }
+
+    // Validate podcast URLs before creating bookmark
+    if (req.source === BookmarkSource.PODCAST) {
+      const urlInfo = parsePodcastUrl(req.url);
+      if (urlInfo.platform === 'unknown') {
+        throw APIError.invalidArgument(
+          "URL does not appear to be a valid podcast URL (RSS, Apple Podcasts, or Google Podcasts)"
+        );
+      }
     }
 
     // Create the bookmark
