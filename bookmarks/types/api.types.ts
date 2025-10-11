@@ -1,5 +1,5 @@
 import { Query } from "encore.dev/api";
-import { Bookmark, BookmarkSource } from "./domain.types";
+import { Bookmark, BookmarkSource, Transcription, TranscriptionStatus } from "./domain.types";
 
 // ============================================
 // Bookmark API Types
@@ -54,4 +54,40 @@ export interface DeleteBookmarkRequest {
 // Response interface for delete operation
 export interface DeleteBookmarkResponse {
   success: boolean;
+}
+
+// Request interface for getting bookmark details with enriched data
+export interface GetBookmarkDetailsRequest {
+  id: number;
+}
+
+// Client-facing transcription view (subset of full Transcription domain type)
+// Excludes internal fields like deepgram_response, processing timestamps, and database IDs
+export interface TranscriptionDetails {
+  // Content
+  transcript: string | null;
+  deepgram_summary: string | null;
+  summary: string | null;
+
+  // Sentiment analysis
+  sentiment: "positive" | "negative" | "neutral" | null;
+  sentiment_score: number | null;
+
+  // Metadata
+  duration: number | null; // Duration in seconds
+  confidence: number | null; // Confidence score 0-1
+  status: TranscriptionStatus; // Processing status
+  error_message: string | null; // Error if failed
+  created_at: Date; // When transcription started
+  updated_at: Date; // When last updated
+}
+
+// Response interface for bookmark details (includes all enriched data)
+export interface BookmarkDetailsResponse {
+  bookmark: Bookmark;
+  transcription: TranscriptionDetails | null;
+  // Future enrichment types can be added here:
+  // webContent?: WebContent | null;
+  // codeAnalysis?: CodeAnalysis | null;
+  // threadSummary?: ThreadSummary | null;
 }

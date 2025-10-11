@@ -14,6 +14,17 @@ export interface YouTubeDownloadEvent {
 }
 
 /**
+ * Stage 1: Podcast Download Event
+ * Triggered when a podcast bookmark is created
+ * Triggers audio download from podcast RSS feed
+ */
+export interface PodcastDownloadEvent {
+  bookmarkId: number;
+  url: string; // Podcast episode or RSS feed URL
+  title?: string;
+}
+
+/**
  * Stage 2: Audio Transcription Event
  * Triggered after audio download completes
  * Triggers Deepgram transcription

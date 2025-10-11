@@ -16,6 +16,9 @@
   "dependencies": {
     "@deepgram/sdk": "^4.11.2",
     "encore.dev": "^1.50.4",
+    "fuzzysort": "^3.1.0",
+    "node-podcast-parser": "^2.3.0",
+    "open-graph-scraper": "^6.10.0",
     "openai": "^6.3.0"
   },
   "optionalDependencies": {

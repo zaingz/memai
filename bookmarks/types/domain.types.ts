@@ -7,6 +7,7 @@ import { DeepgramResponse } from "./deepgram.types";
 // Enum for bookmark sources
 export enum BookmarkSource {
   YOUTUBE = "youtube",
+  PODCAST = "podcast",
   REDDIT = "reddit",
   TWITTER = "twitter",
   LINKEDIN = "linkedin",

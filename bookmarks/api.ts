@@ -10,15 +10,40 @@ import {
   ListBookmarksResponse,
   DeleteBookmarkRequest,
   DeleteBookmarkResponse,
+  GetBookmarkDetailsRequest,
+  BookmarkDetailsResponse,
+  TranscriptionDetails,
   BookmarkSource,
 } from "./types";
 import { youtubeDownloadTopic } from "./events/youtube-download.events";
+import { podcastDownloadTopic } from "./events/podcast-download.events";
 import { BookmarkRepository } from "./repositories/bookmark.repository";
 import { TranscriptionRepository } from "./repositories/transcription.repository";
+import { Transcription } from "./types/domain.types";
 
 // Initialize repositories
 const bookmarkRepo = new BookmarkRepository(db);
 const transcriptionRepo = new TranscriptionRepository(db);
+
+/**
+ * Maps a full Transcription domain object to a client-facing TranscriptionDetails view
+ * Excludes internal implementation details like deepgram_response and processing timestamps
+ */
+function toTranscriptionDetails(t: Transcription): TranscriptionDetails {
+  return {
+    transcript: t.transcript,
+    deepgram_summary: t.deepgram_summary,
+    summary: t.summary,
+    sentiment: t.sentiment,
+    sentiment_score: t.sentiment_score,
+    duration: t.duration,
+    confidence: t.confidence,
+    status: t.status,
+    error_message: t.error_message,
+    created_at: t.created_at,
+    updated_at: t.updated_at,
+  };
+}
 
 // CREATE - Add a new bookmark
 export const create = api(
@@ -70,8 +95,39 @@ export const create = api(
         });
         // Don't fail the bookmark creation if event publishing fails
       }
+    } else if (bookmark.source === BookmarkSource.PODCAST) {
+      log.info("Detected podcast bookmark, will publish event", {
+        bookmarkId: bookmark.id,
+        source: bookmark.source,
+      });
+
+      try {
+        // Create a pending transcription record
+        await transcriptionRepo.createPending(bookmark.id);
+
+        log.info("Created pending transcription record", {
+          bookmarkId: bookmark.id,
+        });
+
+        // Publish event to trigger Stage 1: Podcast download
+        const messageId = await podcastDownloadTopic.publish({
+          bookmarkId: bookmark.id,
+          url: bookmark.url,
+          title: bookmark.title || undefined,
+        });
+
+        log.info("Successfully published podcast bookmark event", {
+          bookmarkId: bookmark.id,
+          messageId,
+        });
+      } catch (error) {
+        log.error(error, "Failed to publish podcast bookmark event", {
+          bookmarkId: bookmark.id,
+        });
+        // Don't fail the bookmark creation if event publishing fails
+      }
     } else {
-      log.info("Not a YouTube bookmark, skipping transcription", {
+      log.info("Not a YouTube or podcast bookmark, skipping transcription", {
         bookmarkId: bookmark.id,
         source: bookmark.source,
       });
@@ -143,5 +199,32 @@ export const remove = api(
   async (req: DeleteBookmarkRequest): Promise<DeleteBookmarkResponse> => {
     await bookmarkRepo.delete(req.id);
     return { success: true };
+  }
+);
+
+// GET DETAILS - Get a bookmark with all enriched data (transcription, etc.)
+export const getDetails = api(
+  { expose: true, method: "GET", path: "/bookmarks/:id/details" },
+  async (req: GetBookmarkDetailsRequest): Promise<BookmarkDetailsResponse> => {
+    // Fetch the bookmark
+    const bookmark = await bookmarkRepo.findById(req.id);
+
+    if (!bookmark) {
+      throw APIError.notFound(`Bookmark with id ${req.id} not found`);
+    }
+
+    // Fetch transcription if it exists (only relevant for YouTube bookmarks)
+    const transcription = await transcriptionRepo.findByBookmarkId(req.id);
+
+    log.info("Fetched bookmark details", {
+      bookmarkId: req.id,
+      source: bookmark.source,
+      hasTranscription: !!transcription,
+    });
+
+    return {
+      bookmark,
+      transcription: transcription ? toTranscriptionDetails(transcription) : null,
+    };
   }
 );
