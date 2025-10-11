@@ -14,7 +14,9 @@
     "vitest": "^1.5.0"
   },
   "dependencies": {
-    "encore.dev": "^1.50.4"
+    "@deepgram/sdk": "^4.11.2",
+    "encore.dev": "^1.50.4",
+    "openai": "^6.3.0"
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "^4.13.0"
