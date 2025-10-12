@@ -19,6 +19,7 @@ export enum BookmarkSource {
 // Database row interface for bookmarks
 export interface Bookmark {
   id: number;
+  user_id: number;
   url: string;
   title: string | null;
   source: BookmarkSource;

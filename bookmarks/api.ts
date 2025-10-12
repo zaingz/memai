@@ -1,4 +1,5 @@
 import { api, APIError } from "encore.dev/api";
+import { getAuthData } from "~encore/auth";
 import log from "encore.dev/log";
 import { db } from "./db";
 import {
@@ -59,8 +60,15 @@ function toTranscriptionDetails(t: Transcription): TranscriptionDetails {
 
 // CREATE - Add a new bookmark
 export const create = api(
-  { expose: true, method: "POST", path: "/bookmarks" },
+  { expose: true, method: "POST", path: "/bookmarks", auth: true },
   async (req: CreateBookmarkRequest): Promise<BookmarkResponse> => {
+    // Get authenticated user
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+    const userId = parseInt(auth.userID, 10);
+
     // Validate required fields
     if (!req.url || !req.client_time) {
       throw APIError.invalidArgument("url and client_time are required");
@@ -71,6 +79,7 @@ export const create = api(
 
     // Create the bookmark
     const bookmark = await bookmarkRepo.create({
+      user_id: userId,
       url: req.url,
       title: req.title || null,
       source,
@@ -111,9 +120,16 @@ export const create = api(
 
 // READ - Get a bookmark by ID
 export const get = api(
-  { expose: true, method: "GET", path: "/bookmarks/:id" },
+  { expose: true, method: "GET", path: "/bookmarks/:id", auth: true },
   async (req: GetBookmarkRequest): Promise<BookmarkResponse> => {
-    const bookmark = await bookmarkRepo.findById(req.id);
+    // Get authenticated user
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+    const userId = parseInt(auth.userID, 10);
+
+    const bookmark = await bookmarkRepo.findById(req.id, userId);
 
     if (!bookmark) {
       throw APIError.notFound(`Bookmark with id ${req.id} not found`);
@@ -125,12 +141,20 @@ export const get = api(
 
 // LIST - Get all bookmarks with pagination and filtering
 export const list = api(
-  { expose: true, method: "GET", path: "/bookmarks" },
+  { expose: true, method: "GET", path: "/bookmarks", auth: true },
   async (req: ListBookmarksRequest): Promise<ListBookmarksResponse> => {
+    // Get authenticated user
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+    const userId = parseInt(auth.userID, 10);
+
     const limit = req.limit || 50;
     const offset = req.offset || 0;
 
     const { bookmarks, total } = await bookmarkRepo.list({
+      userId,
       limit,
       offset,
       source: req.source as BookmarkSource | undefined,
@@ -142,8 +166,15 @@ export const list = api(
 
 // UPDATE - Update a bookmark
 export const update = api(
-  { expose: true, method: "PUT", path: "/bookmarks/:id" },
+  { expose: true, method: "PUT", path: "/bookmarks/:id", auth: true },
   async (req: UpdateBookmarkRequest): Promise<BookmarkResponse> => {
+    // Get authenticated user
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+    const userId = parseInt(auth.userID, 10);
+
     // Validate that at least one field is provided
     if (
       req.url === undefined &&
@@ -154,7 +185,7 @@ export const update = api(
       throw APIError.invalidArgument("No fields to update");
     }
 
-    const bookmark = await bookmarkRepo.update(req.id, {
+    const bookmark = await bookmarkRepo.update(req.id, userId, {
       url: req.url,
       title: req.title,
       source: req.source,
@@ -167,19 +198,33 @@ export const update = api(
 
 // DELETE - Delete a bookmark
 export const remove = api(
-  { expose: true, method: "DELETE", path: "/bookmarks/:id" },
+  { expose: true, method: "DELETE", path: "/bookmarks/:id", auth: true },
   async (req: DeleteBookmarkRequest): Promise<DeleteBookmarkResponse> => {
-    await bookmarkRepo.delete(req.id);
+    // Get authenticated user
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+    const userId = parseInt(auth.userID, 10);
+
+    await bookmarkRepo.delete(req.id, userId);
     return { success: true };
   }
 );
 
 // GET DETAILS - Get a bookmark with all enriched data (transcription, etc.)
 export const getDetails = api(
-  { expose: true, method: "GET", path: "/bookmarks/:id/details" },
+  { expose: true, method: "GET", path: "/bookmarks/:id/details", auth: true },
   async (req: GetBookmarkDetailsRequest): Promise<BookmarkDetailsResponse> => {
+    // Get authenticated user
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+    const userId = parseInt(auth.userID, 10);
+
     // Fetch the bookmark
-    const bookmark = await bookmarkRepo.findById(req.id);
+    const bookmark = await bookmarkRepo.findById(req.id, userId);
 
     if (!bookmark) {
       throw APIError.notFound(`Bookmark with id ${req.id} not found`);
@@ -208,8 +253,15 @@ export const getDetails = api(
 // GENERATE DAILY DIGEST - Generate or retrieve daily digest for a date
 // (Used for manual triggering with optional date parameter)
 export const generateDailyDigest = api(
-  { expose: true, method: "POST", path: "/digests/generate" },
+  { expose: true, method: "POST", path: "/digests/generate", auth: true },
   async (req?: GenerateDailyDigestRequest): Promise<GenerateDailyDigestResponse> => {
+    // Get authenticated user
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+    const userId = parseInt(auth.userID, 10);
+
     // Determine the date for digest generation
     // If date is provided, use it; otherwise use yesterday
     let digestDate: Date;
@@ -228,13 +280,13 @@ export const generateDailyDigest = api(
 
     log.info("Generating daily digest", {
       digestDate: digestDate.toISOString().split("T")[0],
-      userId: req?.user_id || "global",
+      userId,
     });
 
     try {
       const digest = await dailyDigestService.generateDailyDigest({
         date: digestDate,
-        userId: req?.user_id,
+        userId,
         forceRegenerate: false,
       });
 
@@ -260,8 +312,15 @@ export const generateDailyDigest = api(
 
 // GET DAILY DIGEST - Get digest for a specific date
 export const getDailyDigest = api(
-  { expose: true, method: "GET", path: "/digests/:date" },
+  { expose: true, method: "GET", path: "/digests/:date", auth: true },
   async (req: GetDailyDigestRequest): Promise<GetDailyDigestResponse> => {
+    // Get authenticated user
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+    const userId = parseInt(auth.userID, 10);
+
     let digestDate: Date;
 
     try {
@@ -272,18 +331,18 @@ export const getDailyDigest = api(
 
     log.info("Fetching daily digest", {
       digestDate: req.date,
-      userId: req.user_id || "global",
+      userId,
     });
 
     const digest = await dailyDigestService.getDigestByDate(
       digestDate,
-      req.user_id
+      userId
     );
 
     if (!digest) {
       log.info("Daily digest not found", {
         digestDate: req.date,
-        userId: req.user_id || "global",
+        userId,
       });
     }
 
@@ -293,21 +352,28 @@ export const getDailyDigest = api(
 
 // LIST DAILY DIGESTS - List all digests with pagination
 export const listDailyDigests = api(
-  { expose: true, method: "GET", path: "/digests" },
+  { expose: true, method: "GET", path: "/digests", auth: true },
   async (req: ListDailyDigestsRequest): Promise<ListDailyDigestsResponse> => {
+    // Get authenticated user
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+    const userId = parseInt(auth.userID, 10);
+
     const limit = req.limit || 30;
     const offset = req.offset || 0;
 
     log.info("Listing daily digests", {
       limit,
       offset,
-      userId: req.user_id || "global",
+      userId,
     });
 
     const { digests, total } = await dailyDigestService.listDigests({
       limit,
       offset,
-      userId: req.user_id,
+      userId,
     });
 
     return { digests, total };
