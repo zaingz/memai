@@ -2,10 +2,12 @@ import { Subscription } from "encore.dev/pubsub";
 import { secret } from "encore.dev/config";
 import log from "encore.dev/log";
 import { db } from "../db";
-import { summaryGenerationTopic } from "../events/summary-generation.events";
-import { SummaryGenerationEvent } from "../types";
+import { audioTranscribedTopic } from "../events/audio-transcribed.events";
+import { AudioTranscribedEvent } from "../types";
 import { OpenAIService } from "../services/openai.service";
 import { TranscriptionRepository } from "../repositories/transcription.repository";
+import { SUMMARY_PROMPTS, DEFAULT_SUMMARY_PROMPT } from "../config/prompts.config";
+import { BookmarkSource } from "../types/domain.types";
 
 // Secrets
 const openaiApiKey = secret("OpenAIAPIKey");
@@ -15,38 +17,47 @@ const openaiService = new OpenAIService(openaiApiKey());
 const transcriptionRepo = new TranscriptionRepository(db);
 
 /**
- * Stage 3: Summary Generation Processor
- * Generates OpenAI summary and marks transcription as completed
+ * Summary Generation Processor
+ * Generates OpenAI summary with source-specific prompts
+ * Independent: Uses source metadata to select appropriate prompt
  */
-async function handleSummaryGeneration(event: SummaryGenerationEvent) {
-  const { bookmarkId, transcript } = event;
+async function handleSummaryGeneration(event: AudioTranscribedEvent) {
+  const { bookmarkId, transcript, source } = event;
 
   try {
-    log.info("Stage 3: Starting summary generation", {
+    // Select source-specific prompt
+    const prompt = SUMMARY_PROMPTS[source as BookmarkSource] || DEFAULT_SUMMARY_PROMPT;
+
+    log.info("Starting summary generation", {
       bookmarkId,
+      source,
       transcriptLength: transcript.length,
+      usingPrompt: source,
     });
 
-    // Generate summary using OpenAI
-    const summary = await openaiService.generateSummary(transcript);
+    // Generate summary using OpenAI with source-specific prompt
+    const summary = await openaiService.generateSummary(transcript, prompt);
 
     log.info("Summary generated", {
       bookmarkId,
+      source,
       summaryLength: summary.length,
     });
 
     // Store summary and mark as completed
     await transcriptionRepo.updateSummary(bookmarkId, summary);
 
-    log.info("Stage 3 completed: Summary stored and transcription marked as completed", {
+    log.info("Summary generation completed, transcription marked as completed", {
       bookmarkId,
+      source,
     });
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
 
-    log.error(error, "Stage 3 failed: Summary generation error", {
+    log.error(error, "Summary generation failed", {
       bookmarkId,
+      source,
       errorMessage,
     });
 
@@ -58,9 +69,9 @@ async function handleSummaryGeneration(event: SummaryGenerationEvent) {
   }
 }
 
-// Subscription to summary generation events
+// Subscription to audio-transcribed topic
 export const summaryGenerationSubscription = new Subscription(
-  summaryGenerationTopic,
+  audioTranscribedTopic,
   "summary-generation-processor",
   {
     handler: handleSummaryGeneration,

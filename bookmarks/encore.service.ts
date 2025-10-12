@@ -1,9 +1,12 @@
 import { Service } from "encore.dev/service";
 
-// Import processors to register subscriptions (multi-stage pipeline)
-import "./processors/youtube-download.processor"; // Stage 1: YouTube download
-import "./processors/podcast-download.processor"; // Stage 1: Podcast download
-import "./processors/audio-transcription.processor"; // Stage 2: Deepgram transcription (shared)
-import "./processors/summary-generation.processor"; // Stage 3: OpenAI summary (shared)
+// Import processors to register subscriptions (decoupled event-driven pipeline)
+import "./processors/bookmark-classification.processor"; // Classify bookmark URL and update source
+import "./processors/audio-download.processor"; // Unified audio download (YouTube, Podcast, etc.)
+import "./processors/audio-transcription.processor"; // Deepgram transcription (source-agnostic)
+import "./processors/summary-generation.processor"; // OpenAI summary (source-aware prompts)
+
+// Import cron jobs to register scheduled tasks
+import "./cron/daily-digest.cron"; // Generate daily digest at 9 PM GMT
 
 export default new Service("bookmarks");

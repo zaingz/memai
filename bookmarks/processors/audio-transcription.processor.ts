@@ -2,9 +2,9 @@ import { Subscription } from "encore.dev/pubsub";
 import { secret } from "encore.dev/config";
 import log from "encore.dev/log";
 import { db } from "../db";
-import { audioTranscriptionTopic } from "../events/audio-transcription.events";
-import { summaryGenerationTopic } from "../events/summary-generation.events";
-import { AudioTranscriptionEvent } from "../types";
+import { audioDownloadedTopic } from "../events/audio-downloaded.events";
+import { audioTranscribedTopic } from "../events/audio-transcribed.events";
+import { AudioDownloadedEvent } from "../types";
 import { DeepgramService } from "../services/deepgram.service";
 import { TranscriptionRepository } from "../repositories/transcription.repository";
 import { extractDeepgramData } from "../utils/deepgram-extractor.util";
@@ -18,17 +18,19 @@ const deepgramService = new DeepgramService(deepgramApiKey());
 const transcriptionRepo = new TranscriptionRepository(db);
 
 /**
- * Stage 2: Audio Transcription Processor
- * Transcribes audio with Deepgram and publishes to next stage
+ * Audio Transcription Processor
+ * Transcribes audio with Deepgram and publishes transcription event
+ * Independent: Works with any audio source, uses source metadata for tracking
  */
-async function handleAudioTranscription(event: AudioTranscriptionEvent) {
-  const { bookmarkId, audioBucketKey, videoId } = event;
+async function handleAudioTranscription(event: AudioDownloadedEvent) {
+  const { bookmarkId, audioBucketKey, source, metadata } = event;
 
   try {
-    log.info("Stage 2: Starting audio transcription", {
+    log.info("Starting audio transcription", {
       bookmarkId,
-      videoId,
+      source,
       audioBucketKey,
+      metadata,
     });
 
     // Download audio from bucket
@@ -84,22 +86,25 @@ async function handleAudioTranscription(event: AudioTranscriptionEvent) {
     await audioFilesBucket.remove(audioBucketKey);
     log.info("Audio deleted from bucket", { bookmarkId, audioBucketKey });
 
-    // Publish event for Stage 3: Summary Generation
-    const messageId = await summaryGenerationTopic.publish({
+    // Publish audio-transcribed event
+    const messageId = await audioTranscribedTopic.publish({
       bookmarkId,
       transcript,
+      source,
     });
 
-    log.info("Stage 2 completed: Published summary generation event", {
+    log.info("Audio transcription completed, published event", {
       bookmarkId,
+      source,
       messageId,
     });
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
 
-    log.error(error, "Stage 2 failed: Audio transcription error", {
+    log.error(error, "Audio transcription failed", {
       bookmarkId,
+      source,
       errorMessage,
     });
 
@@ -125,9 +130,9 @@ async function handleAudioTranscription(event: AudioTranscriptionEvent) {
   }
 }
 
-// Subscription to audio transcription events
+// Subscription to audio-downloaded topic
 export const audioTranscriptionSubscription = new Subscription(
-  audioTranscriptionTopic,
+  audioDownloadedTopic,
   "audio-transcription-processor",
   {
     handler: handleAudioTranscription,

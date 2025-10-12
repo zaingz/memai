@@ -134,6 +134,23 @@ export class BookmarkRepository {
   }
 
   /**
+   * Updates only the source field of a bookmark
+   * Used by classification processor to update detected source
+   */
+  async updateSource(id: number, source: BookmarkSource): Promise<void> {
+    const existing = await this.findById(id);
+    if (!existing) {
+      throw new Error(`Bookmark with id ${id} not found`);
+    }
+
+    await this.db.exec`
+      UPDATE bookmarks
+      SET source = ${source}
+      WHERE id = ${id}
+    `;
+  }
+
+  /**
    * Deletes a bookmark
    */
   async delete(id: number): Promise<void> {

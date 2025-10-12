@@ -11,3 +11,6 @@ export * from "./event.types";
 
 // Deepgram types
 export * from "./deepgram.types";
+
+// Daily digest types
+export * from "./daily-digest.types";

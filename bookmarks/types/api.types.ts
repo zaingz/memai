@@ -9,7 +9,7 @@ import { Bookmark, BookmarkSource, Transcription, TranscriptionStatus } from "./
 export interface CreateBookmarkRequest {
   url: string;
   title?: string;
-  source: BookmarkSource;
+  source?: BookmarkSource; // Optional - defaults to 'web', triggers auto-classification
   client_time: Date;
   metadata?: Record<string, any>;
 }
