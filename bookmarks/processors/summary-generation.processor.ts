@@ -20,8 +20,10 @@ const transcriptionRepo = new TranscriptionRepository(db);
  * Summary Generation Processor
  * Generates OpenAI summary with source-specific prompts
  * Independent: Uses source metadata to select appropriate prompt
+ *
+ * Exported for testing purposes
  */
-async function handleSummaryGeneration(event: AudioTranscribedEvent) {
+export async function handleSummaryGeneration(event: AudioTranscribedEvent) {
   const { bookmarkId, transcript, source } = event;
 
   try {

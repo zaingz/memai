@@ -20,8 +20,10 @@ const transcriptionRepo = new TranscriptionRepository(db);
  * Unified Audio Download Processor
  * Handles audio download for YouTube, Podcast, and future audio sources
  * Uses source field to determine which downloader service to use
+ *
+ * Exported for testing purposes
  */
-async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) {
+export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) {
   const { bookmarkId, source, url, title } = event;
   let audioBucketKey: string | null = null;
 

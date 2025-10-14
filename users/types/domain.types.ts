@@ -4,24 +4,25 @@
 
 /**
  * Database row interface for users table
+ * Uses UUID as primary key (Supabase user ID)
  */
 export interface User {
-  id: number;
+  id: string; // UUID from Supabase
   email: string;
-  password_hash: string;
   name: string | null;
+  migrated_to_supabase: boolean;
   created_at: Date;
   updated_at: Date;
 }
 
 /**
- * Safe user representation (excludes password_hash)
- * Used for API responses and client-facing data
+ * Safe user representation for API responses
  */
 export interface SafeUser {
-  id: number;
+  id: string; // UUID from Supabase
   email: string;
   name: string | null;
+  migrated_to_supabase: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -30,19 +31,19 @@ export interface SafeUser {
  * JWT token payload structure
  */
 export interface TokenPayload {
-  userID: number;
+  userID: string; // UUID from Supabase
   email: string;
 }
 
 /**
  * Helper function to convert User to SafeUser
- * Removes password_hash for security
  */
 export function toSafeUser(user: User): SafeUser {
   return {
     id: user.id,
     email: user.email,
     name: user.name,
+    migrated_to_supabase: user.migrated_to_supabase,
     created_at: user.created_at,
     updated_at: user.updated_at,
   };

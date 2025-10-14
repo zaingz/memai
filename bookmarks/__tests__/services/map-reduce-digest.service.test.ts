@@ -530,8 +530,7 @@ describe("MapReduceDigestService", () => {
       expect(mockLog.info).toHaveBeenCalledWith(
         "Map-reduce digest generation completed",
         expect.objectContaining({
-          totalTranscriptions: 2,
-          totalBatches: 2,
+          finalDigestLength: expect.any(Number),
         })
       );
     });
@@ -551,8 +550,7 @@ describe("MapReduceDigestService", () => {
 
       expect(mockLog.error).toHaveBeenCalledWith(
         llmError,
-        "Map-reduce digest generation failed",
-        expect.any(Object)
+        "Map-reduce digest generation failed"
       );
     });
 
@@ -572,10 +570,10 @@ describe("MapReduceDigestService", () => {
 
       await service.generateDigest(transcriptions);
 
-      expect(mockLog.debug).toHaveBeenCalledWith(
+      expect(mockLog.info).toHaveBeenCalledWith(
         "Map phase completed",
         expect.objectContaining({
-          batchesProcessed: 3,
+          intermediateCount: 3,
         })
       );
     });

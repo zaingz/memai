@@ -37,7 +37,7 @@ export interface ProcessingMetadata {
 export interface DailyDigest {
   id: number;
   digest_date: Date;
-  user_id: number | null;
+  user_id: string | null; // UUID from Supabase users.id
   status: DigestStatus;
   error_message: string | null;
 
@@ -68,7 +68,7 @@ export interface GenerateDailyDigestRequest {
   // Optional date to generate digest for (defaults to yesterday)
   date?: string; // ISO date string (YYYY-MM-DD)
   // Optional user_id for future scoping (not used yet)
-  user_id?: number;
+  user_id?: string;
 }
 
 // Generate daily digest response
@@ -80,7 +80,7 @@ export interface GenerateDailyDigestResponse {
 // Get daily digest request
 export interface GetDailyDigestRequest {
   date: string; // ISO date string (YYYY-MM-DD)
-  user_id?: number;
+  user_id?: string;
 }
 
 // Get daily digest response
@@ -92,7 +92,7 @@ export interface GetDailyDigestResponse {
 export interface ListDailyDigestsRequest {
   limit?: number;
   offset?: number;
-  user_id?: number;
+  user_id?: string;
 }
 
 // List daily digests response
@@ -108,7 +108,7 @@ export interface ListDailyDigestsResponse {
 // Options for digest generation
 export interface DigestGenerationOptions {
   date: Date;
-  userId?: number;
+  userId?: string; // UUID from Supabase
   forceRegenerate?: boolean; // If true, regenerate even if exists
 }
 

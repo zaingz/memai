@@ -498,11 +498,26 @@ describe("Summary Generation Processor", () => {
 
       await handleSummaryGeneration(event);
 
+      // Expect 3 separate log calls matching implementation
       expect(mockLog.info).toHaveBeenCalledWith(
-        "Summary generation completed",
+        "Starting summary generation",
+        expect.objectContaining({
+          bookmarkId: 100,
+        })
+      );
+
+      expect(mockLog.info).toHaveBeenCalledWith(
+        "Summary generated",
         expect.objectContaining({
           bookmarkId: 100,
           summaryLength: expect.any(Number),
+        })
+      );
+
+      expect(mockLog.info).toHaveBeenCalledWith(
+        "Summary generation completed, transcription marked as completed",
+        expect.objectContaining({
+          bookmarkId: 100,
         })
       );
     });

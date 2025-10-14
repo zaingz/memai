@@ -11,7 +11,7 @@ export class BookmarkRepository {
    * Creates a new bookmark
    */
   async create(data: {
-    user_id: number;
+    user_id: string; // UUID from Supabase
     url: string;
     title: string | null;
     source: BookmarkSource;
@@ -26,7 +26,7 @@ export class BookmarkRepository {
         ${data.title},
         ${data.source},
         ${data.client_time},
-        ${data.metadata ? JSON.stringify(data.metadata) : null}
+        ${data.metadata}
       )
       RETURNING *
     `;
@@ -41,7 +41,7 @@ export class BookmarkRepository {
   /**
    * Finds a bookmark by ID (filtered by user_id for data isolation)
    */
-  async findById(id: number, userId: number): Promise<Bookmark | null> {
+  async findById(id: number, userId: string): Promise<Bookmark | null> {
     const row = await this.db.queryRow<Bookmark>`
       SELECT * FROM bookmarks WHERE id = ${id} AND user_id = ${userId}
     `;
@@ -52,7 +52,7 @@ export class BookmarkRepository {
    * Lists bookmarks with pagination and optional filtering (filtered by user_id)
    */
   async list(params: {
-    userId: number;
+    userId: string;
     limit: number;
     offset: number;
     source?: BookmarkSource;
@@ -106,7 +106,7 @@ export class BookmarkRepository {
    */
   async update(
     id: number,
-    userId: number,
+    userId: string,
     data: {
       url?: string;
       title?: string;
@@ -120,14 +120,20 @@ export class BookmarkRepository {
       throw new Error(`Bookmark with id ${id} not found for user ${userId}`);
     }
 
+    // Determine which fields to update (use existing if not provided)
+    const urlToUse = data.url !== undefined ? data.url : existing.url;
+    const titleToUse = data.title !== undefined ? data.title : existing.title;
+    const sourceToUse = data.source !== undefined ? data.source : existing.source;
+    const metadataToUse = data.metadata !== undefined ? data.metadata : existing.metadata;
+
     // Update with new values or keep existing
     const row = await this.db.queryRow<Bookmark>`
       UPDATE bookmarks
       SET
-        url = ${data.url !== undefined ? data.url : existing.url},
-        title = ${data.title !== undefined ? data.title : existing.title},
-        source = ${data.source !== undefined ? data.source : existing.source},
-        metadata = ${data.metadata !== undefined ? JSON.stringify(data.metadata) : existing.metadata}
+        url = ${urlToUse},
+        title = ${titleToUse},
+        source = ${sourceToUse},
+        metadata = ${metadataToUse}
       WHERE id = ${id} AND user_id = ${userId}
       RETURNING *
     `;
@@ -141,25 +147,27 @@ export class BookmarkRepository {
 
   /**
    * Updates only the source field of a bookmark
-   * Used by classification processor to update detected source
+   * Used by classification processor to update detected source (internal operation)
+   * NOTE: This is an internal method called by processors, so it doesn't require userId filtering
    */
   async updateSource(id: number, source: BookmarkSource): Promise<void> {
-    const existing = await this.findById(id);
-    if (!existing) {
-      throw new Error(`Bookmark with id ${id} not found`);
-    }
-
-    await this.db.exec`
+    // Direct update without user check (internal operation)
+    const result = await this.db.queryRow<{ id: number }>`
       UPDATE bookmarks
       SET source = ${source}
       WHERE id = ${id}
+      RETURNING id
     `;
+
+    if (!result) {
+      throw new Error(`Bookmark with id ${id} not found`);
+    }
   }
 
   /**
    * Deletes a bookmark (filtered by user_id)
    */
-  async delete(id: number, userId: number): Promise<void> {
+  async delete(id: number, userId: string): Promise<void> {
     // Check if bookmark exists for this user
     const existing = await this.findById(id, userId);
     if (!existing) {

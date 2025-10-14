@@ -622,8 +622,8 @@ describe("Audio Download Processor", () => {
 
       await handleAudioDownload(event);
 
-      expect(mockLog.debug).toHaveBeenCalledWith(
-        "Skipping audio download",
+      expect(mockLog.info).toHaveBeenCalledWith(
+        "Source does not require audio processing, skipping",
         expect.objectContaining({
           bookmarkId: 102,
           source: BookmarkSource.WEB,

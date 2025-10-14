@@ -3,25 +3,26 @@ import { User } from "../types";
 
 /**
  * UserRepository handles all database operations for users
- * Follows the Repository pattern for clean separation of concerns
+ * Uses UUID as primary key (Supabase user ID)
  */
 export class UserRepository {
   constructor(private readonly db: SQLDatabase) {}
 
   /**
    * Create a new user in the database
-   * @param data User data including email, password_hash, and optional name
-   * @returns The created user with id and timestamps
-   * @throws Error if user creation fails (e.g., duplicate email)
+   * Called after Supabase user creation to store additional user data
+   * @param data User data including Supabase UUID, email, and optional name
+   * @returns The created user
+   * @throws Error if user creation fails (e.g., duplicate id/email)
    */
   async create(data: {
+    id: string; // UUID from Supabase
     email: string;
-    password_hash: string;
-    name?: string;
+    name?: string | null;
   }): Promise<User> {
     const row = await this.db.queryRow<User>`
-      INSERT INTO users (email, password_hash, name)
-      VALUES (${data.email}, ${data.password_hash}, ${data.name || null})
+      INSERT INTO users (id, email, name, migrated_to_supabase)
+      VALUES (${data.id}, ${data.email}, ${data.name || null}, TRUE)
       RETURNING *
     `;
 
@@ -33,11 +34,11 @@ export class UserRepository {
   }
 
   /**
-   * Find a user by their ID
-   * @param id User ID
+   * Find a user by their ID (UUID from Supabase)
+   * @param id User UUID
    * @returns User if found, null otherwise
    */
-  async findById(id: number): Promise<User | null> {
+  async findById(id: string): Promise<User | null> {
     return (
       (await this.db.queryRow<User>`
       SELECT * FROM users WHERE id = ${id}
@@ -47,7 +48,6 @@ export class UserRepository {
 
   /**
    * Find a user by their email address
-   * Used during login to authenticate users
    * @param email Email address
    * @returns User if found, null otherwise
    */
@@ -60,8 +60,17 @@ export class UserRepository {
   }
 
   /**
+   * Alias for findById for backward compatibility
+   * Used during Supabase JWT authentication
+   * @param supabaseUserId Supabase user UUID
+   * @returns User if found, null otherwise
+   */
+  async findBySupabaseId(supabaseUserId: string): Promise<User | null> {
+    return this.findById(supabaseUserId);
+  }
+
+  /**
    * Check if a user exists with the given email
-   * Used during signup to prevent duplicate accounts
    * @param email Email address
    * @returns true if user exists, false otherwise
    */
@@ -73,46 +82,71 @@ export class UserRepository {
   }
 
   /**
+   * Check if a user exists with the given ID
+   * @param id User UUID
+   * @returns true if user exists, false otherwise
+   */
+  async existsById(id: string): Promise<boolean> {
+    const row = await this.db.queryRow<{ count: number }>`
+      SELECT COUNT(*) as count FROM users WHERE id = ${id}
+    `;
+    return row ? row.count > 0 : false;
+  }
+
+  /**
    * Update user information
-   * @param id User ID
+   * @param id User UUID
    * @param data Partial user data to update
    * @returns Updated user
    * @throws Error if user not found
    */
   async update(
-    id: number,
+    id: string,
     data: {
       email?: string;
-      password_hash?: string;
-      name?: string;
+      name?: string | null;
     }
   ): Promise<User> {
+    // Build dynamic update query
     const updates: string[] = [];
-    const values: any[] = [];
 
     if (data.email !== undefined) {
-      updates.push(`email = $${values.length + 1}`);
-      values.push(data.email);
-    }
-    if (data.password_hash !== undefined) {
-      updates.push(`password_hash = $${values.length + 1}`);
-      values.push(data.password_hash);
+      updates.push('email');
     }
     if (data.name !== undefined) {
-      updates.push(`name = $${values.length + 1}`);
-      values.push(data.name);
+      updates.push('name');
     }
 
     if (updates.length === 0) {
       throw new Error("No fields to update");
     }
 
-    const row = await this.db.queryRow<User>`
-      UPDATE users
-      SET ${updates.join(", ")}
-      WHERE id = ${id}
-      RETURNING *
-    `;
+    // Create update query based on provided fields
+    let query;
+    if (data.email !== undefined && data.name !== undefined) {
+      query = this.db.queryRow<User>`
+        UPDATE users
+        SET email = ${data.email}, name = ${data.name}
+        WHERE id = ${id}
+        RETURNING *
+      `;
+    } else if (data.email !== undefined) {
+      query = this.db.queryRow<User>`
+        UPDATE users
+        SET email = ${data.email}
+        WHERE id = ${id}
+        RETURNING *
+      `;
+    } else {
+      query = this.db.queryRow<User>`
+        UPDATE users
+        SET name = ${data.name}
+        WHERE id = ${id}
+        RETURNING *
+      `;
+    }
+
+    const row = await query;
 
     if (!row) {
       throw new Error(`User with id ${id} not found`);
@@ -123,10 +157,10 @@ export class UserRepository {
 
   /**
    * Delete a user by ID
-   * @param id User ID
+   * @param id User UUID
    * @throws Error if user not found
    */
-  async delete(id: number): Promise<void> {
+  async delete(id: string): Promise<void> {
     await this.db.exec`
       DELETE FROM users WHERE id = ${id}
     `;

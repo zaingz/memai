@@ -19,7 +19,7 @@ export enum BookmarkSource {
 // Database row interface for bookmarks
 export interface Bookmark {
   id: number;
-  user_id: number;
+  user_id: string; // UUID from Supabase users.id
   url: string;
   title: string | null;
   source: BookmarkSource;

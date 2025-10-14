@@ -44,12 +44,18 @@ export class TranscriptionRepository {
 
   /**
    * Finds a transcription by bookmark ID
+   * NOTE: Excludes deepgram_response JSONB field due to Encore deserialization limitation
    */
   async findByBookmarkId(bookmarkId: number): Promise<Transcription | null> {
-    const row = await this.db.queryRow<Transcription>`
-      SELECT * FROM transcriptions WHERE bookmark_id = ${bookmarkId}
+    const row = await this.db.queryRow<Omit<Transcription, 'deepgram_response'>>`
+      SELECT
+        id, bookmark_id, transcript, deepgram_summary, sentiment, sentiment_score,
+        duration, confidence, summary, status, error_message,
+        processing_started_at, processing_completed_at, created_at, updated_at
+      FROM transcriptions
+      WHERE bookmark_id = ${bookmarkId}
     `;
-    return row || null;
+    return row ? { ...row, deepgram_response: null } as Transcription : null;
   }
 
   // ============================================

@@ -67,7 +67,7 @@ export const create = api(
     if (!auth) {
       throw APIError.unauthenticated("Authentication required");
     }
-    const userId = parseInt(auth.userID, 10);
+    const userId = auth.userID; // UUID from Supabase JWT
 
     // Validate required fields
     if (!req.url || !req.client_time) {
@@ -127,7 +127,7 @@ export const get = api(
     if (!auth) {
       throw APIError.unauthenticated("Authentication required");
     }
-    const userId = parseInt(auth.userID, 10);
+    const userId = auth.userID; // UUID from Supabase JWT
 
     const bookmark = await bookmarkRepo.findById(req.id, userId);
 
@@ -148,7 +148,7 @@ export const list = api(
     if (!auth) {
       throw APIError.unauthenticated("Authentication required");
     }
-    const userId = parseInt(auth.userID, 10);
+    const userId = auth.userID; // UUID from Supabase JWT
 
     const limit = req.limit || 50;
     const offset = req.offset || 0;
@@ -173,7 +173,7 @@ export const update = api(
     if (!auth) {
       throw APIError.unauthenticated("Authentication required");
     }
-    const userId = parseInt(auth.userID, 10);
+    const userId = auth.userID; // UUID from Supabase JWT
 
     // Validate that at least one field is provided
     if (
@@ -205,7 +205,7 @@ export const remove = api(
     if (!auth) {
       throw APIError.unauthenticated("Authentication required");
     }
-    const userId = parseInt(auth.userID, 10);
+    const userId = auth.userID; // UUID from Supabase JWT
 
     await bookmarkRepo.delete(req.id, userId);
     return { success: true };
@@ -221,7 +221,7 @@ export const getDetails = api(
     if (!auth) {
       throw APIError.unauthenticated("Authentication required");
     }
-    const userId = parseInt(auth.userID, 10);
+    const userId = auth.userID; // UUID from Supabase JWT
 
     // Fetch the bookmark
     const bookmark = await bookmarkRepo.findById(req.id, userId);
@@ -260,7 +260,7 @@ export const generateDailyDigest = api(
     if (!auth) {
       throw APIError.unauthenticated("Authentication required");
     }
-    const userId = parseInt(auth.userID, 10);
+    const userId = auth.userID; // UUID from Supabase JWT
 
     // Determine the date for digest generation
     // If date is provided, use it; otherwise use yesterday
@@ -319,7 +319,7 @@ export const getDailyDigest = api(
     if (!auth) {
       throw APIError.unauthenticated("Authentication required");
     }
-    const userId = parseInt(auth.userID, 10);
+    const userId = auth.userID; // UUID from Supabase JWT
 
     let digestDate: Date;
 
@@ -359,7 +359,7 @@ export const listDailyDigests = api(
     if (!auth) {
       throw APIError.unauthenticated("Authentication required");
     }
-    const userId = parseInt(auth.userID, 10);
+    const userId = auth.userID; // UUID from Supabase JWT
 
     const limit = req.limit || 30;
     const offset = req.offset || 0;

@@ -13,8 +13,10 @@ const bookmarkRepo = new BookmarkRepository(db);
  * Bookmark Classification Processor
  * Single responsibility: Classify bookmark URL and update source
  * Independent: Publishes generic event, doesn't know about downstream processors
+ *
+ * Exported for testing purposes
  */
-async function handleBookmarkClassification(event: {
+export async function handleBookmarkClassification(event: {
   bookmarkId: number;
   url: string;
   source: string;

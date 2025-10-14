@@ -43,3 +43,17 @@ export interface LoginResponse {
 export interface MeResponse {
   user: SafeUser;
 }
+
+/**
+ * Request body for updating user profile
+ */
+export interface UpdateProfileRequest {
+  name?: string | null;
+}
+
+/**
+ * Response for profile update
+ */
+export interface UpdateProfileResponse {
+  user: SafeUser;
+}

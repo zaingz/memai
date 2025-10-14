@@ -659,7 +659,7 @@ describe("Audio Transcription Processor", () => {
 
       expect(mockLog.error).toHaveBeenCalledWith(
         transcriptionError,
-        "Transcription failed",
+        "Audio transcription failed",
         expect.objectContaining({
           bookmarkId: 101,
         })
@@ -681,7 +681,7 @@ describe("Audio Transcription Processor", () => {
 
       expect(mockLog.error).toHaveBeenCalledWith(
         downloadError,
-        "Transcription failed",
+        "Audio transcription failed",
         expect.objectContaining({
           bookmarkId: 102,
         })

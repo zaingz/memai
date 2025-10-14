@@ -108,12 +108,12 @@ export class DailyDigestService {
       } else {
         // Create new digest
         digest = await this.digestRepo.create({
-          digestDate: date,
-          userId: userId || null,
-          bookmarkCount,
-          sourcesBreakdown,
-          dateRangeStart: startDate,
-          dateRangeEnd: endDate,
+          digest_date: date,
+          user_id: userId || null,
+          bookmark_count: bookmarkCount,
+          sources_breakdown: sourcesBreakdown,
+          date_range_start: startDate,
+          date_range_end: endDate,
         });
       }
 
@@ -180,7 +180,7 @@ export class DailyDigestService {
    */
   private async checkIfDigestExists(
     date: Date,
-    userId?: number
+    userId?: string
   ): Promise<DailyDigest | null> {
     return await this.digestRepo.findByDate(date, userId);
   }
@@ -209,7 +209,7 @@ export class DailyDigestService {
   private async fetchTranscriptionsForDate(
     startDate: Date,
     endDate: Date,
-    userId?: number
+    userId?: string
   ): Promise<TranscriptionSummary[]> {
     return await this.digestRepo.getCompletedTranscriptionsInRange(
       startDate,
@@ -300,7 +300,7 @@ export class DailyDigestService {
   /**
    * Gets a digest by date
    */
-  async getDigestByDate(date: Date, userId?: number): Promise<DailyDigest | null> {
+  async getDigestByDate(date: Date, userId?: string): Promise<DailyDigest | null> {
     return await this.digestRepo.findByDate(date, userId);
   }
 
@@ -310,7 +310,7 @@ export class DailyDigestService {
   async listDigests(params: {
     limit: number;
     offset: number;
-    userId?: number;
+    userId?: string;
   }): Promise<{ digests: DailyDigest[]; total: number }> {
     return await this.digestRepo.list(params);
   }

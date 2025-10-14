@@ -21,8 +21,10 @@ const transcriptionRepo = new TranscriptionRepository(db);
  * Audio Transcription Processor
  * Transcribes audio with Deepgram and publishes transcription event
  * Independent: Works with any audio source, uses source metadata for tracking
+ *
+ * Exported for testing purposes
  */
-async function handleAudioTranscription(event: AudioDownloadedEvent) {
+export async function handleAudioTranscription(event: AudioDownloadedEvent) {
   const { bookmarkId, audioBucketKey, source, metadata } = event;
 
   try {

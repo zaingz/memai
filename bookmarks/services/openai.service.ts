@@ -56,7 +56,7 @@ export class OpenAIService {
    * @throws Error if generation fails
    */
   async generateDigest(prompt: string, content: string, maxTokens?: number): Promise<string> {
-    const tokensToUse = maxTokens ?? DAILY_DIGEST_CONFIG.maxTokens;
+    const tokensToUse = maxTokens ?? DAILY_DIGEST_CONFIG.maxOutputTokens;
 
     log.info("Generating daily digest with OpenAI Responses API", {
       promptLength: prompt.length,

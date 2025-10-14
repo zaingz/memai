@@ -704,14 +704,299 @@ try {
 
 ## Testing
 
+### Encore.ts Testing Workflow
+
+**Core Principle**: Always run tests via `encore test` (never direct vitest). Encore provisions optimized test databases with fsync disabled and in-memory filesystem for fast integration tests.
+
+#### Setup Requirements
+
+1. **vitest.config.ts** - Encore alias and parallel settings
+```typescript
+export default defineConfig({
+  resolve: {
+    alias: {
+      "~encore": path.resolve(__dirname, "./encore.gen"),
+    },
+  },
+  test: {
+    fileParallelism: false,  // Required for DB tests locally
+    environment: "node",
+    globals: true,
+  },
+});
+```
+
+2. **package.json** - Test script
+```json
+{
+  "scripts": {
+    "test": "vitest"
+  }
+}
+```
+
+3. **Running Tests**
+```bash
+# Local (uses fileParallelism: false from config)
+encore test
+
+# CI (override for speed)
+encore test --fileParallelism=true
+
+# Specific files
+encore test bookmarks/__tests__/bookmark.repository.test.ts
+```
+
+#### How to Write Tests
+
+**Call endpoints directly** (no HTTP required):
+```typescript
+import { createBookmark, getBookmark } from "./api";
+
+it("should create and fetch bookmark", async () => {
+  const created = await createBookmark({ url, source, client_time });
+  const fetched = await getBookmark({ id: created.id });
+  expect(fetched.url).toBe(url);
+});
+```
+
+**Service-to-service calls with auth override**:
+```typescript
+import { usersTestClient } from "~encore/clients";
+
+it("should return user profile", async () => {
+  // Setup test data via repository
+  await userRepo.create({ id, email, name });
+
+  // Call service with auth override
+  const result = await usersTestClient.me(
+    undefined,  // No request body
+    {
+      authData: { userID: id, email }  // Override auth
+    }
+  );
+
+  expect(result.user.email).toBe(email);
+});
+```
+
+**Mock external dependencies** (APIs, etc.):
+```typescript
+// At top of test file, before imports
+vi.mock("@deepgram/sdk", () => ({
+  createClient: vi.fn(() => ({
+    listen: {
+      prerecorded: {
+        transcribeFile: mockTranscribeFile,
+      },
+    },
+  })),
+}));
+```
+
+#### Testing Best Practices
+
+1. **Never mock Encore primitives globally** (log, database, etc.)
+   - Mock only in specific tests that need to verify behavior
+   - Use `vi.hoisted()` for test-specific mocks
+
+2. **Databases are automatic**
+   - Encore creates optimized test databases automatically
+   - Migrations applied automatically
+   - No manual setup needed
+
+3. **Pub/Sub Testing**
+   - Unit test: Export handler and call directly
+   - Integration: Mock topic.publish() calls
+   - Test processor logic, not Encore's pub/sub system
+
+4. **Secrets in Tests**
+   - Set via `encore secret set --type local Key`
+   - Or use `.secrets.local.cue` file
+   - Encore validates secrets exist before tests run
+
+5. **VS Code Integration**
+   - Set `"vitest.commandLine": "encore test"` in settings.json
+   - Provide `ENCORE_RUNTIME_LIB` in `vitest.nodeEnv` if needed
+
+#### CI Configuration
+
+```yaml
+# .github/workflows/test.yml
+- name: Run tests
+  run: encore test --fileParallelism=true
+
+# With coverage
+- name: Run tests with coverage
+  run: encore test --fileParallelism=true --coverage
+```
+
+### ⚠️ CRITICAL: Test Architecture Principles
+
+**See `users/__tests__/TESTING_ARCHITECTURE.md` for complete testing guide.**
+
+### Test Layer Separation (MUST FOLLOW)
+
+Encore.ts has **transaction isolation** in test mode. Each service call runs in its own isolated transaction. This means:
+
+```typescript
+// ❌ WRONG - This will FAIL due to transaction isolation
+await userRepo.create({ id, email });  // Transaction A
+const result = await userApi.getMe(token);  // Transaction B (can't see A)
+// Result: 404 - user not found!
+
+// ✅ CORRECT - Stay at one layer
+// Option 1: All DB operations
+await userRepo.create({ id, email });
+const found = await userRepo.findById(id);  // Same transaction, works!
+
+// Option 2: All service calls
+await webhookApi.userCreated(payload);  // Service call commits
+const result = await userApi.getMe(token);  // Service call sees committed data
+```
+
+### Test Layers (Organized by Responsibility)
+
+**Layer 1: Repository Tests** - Database operations only
+```typescript
+// users/__tests__/user.repository.test.ts
+describe("UserRepository", () => {
+  it("should create and find user", async () => {
+    const user = await userRepo.create({ id, email, name });
+    const found = await userRepo.findById(id);
+    expect(found).toBeDefined();
+  });
+});
+```
+✅ **Pattern**: All DB operations (no service calls)
+✅ **Purpose**: Test data access layer
+
+**Layer 2: Webhook Tests** - External integration points
+```typescript
+// users/__tests__/webhooks.test.ts
+describe("Webhook: userCreated", () => {
+  it("should sync user from Supabase", async () => {
+    const payload = createSupabasePayload({ id, email });
+    const response = await webhookApi.userCreated(payload);
+
+    expect(response.claims.local_db_synced).toBe(true);
+    const user = await userRepo.findById(id);
+    expect(user).toBeDefined();
+  });
+});
+```
+✅ **Pattern**: Test the webhook endpoint itself
+✅ **Purpose**: Test integration with external systems (Supabase)
+❌ **NEVER**: Use webhooks to set up other tests (they're not test helpers!)
+
+**Layer 3: API Handler Tests** - Business logic
+```typescript
+// users/__tests__/api-handlers.test.ts
+describe("API Handlers", () => {
+  it("should return user profile", async () => {
+    // Setup: Direct DB write (test fixture)
+    await userRepo.create({ id, email, name });
+
+    // Test: Call handler with mock auth
+    const token = await generateTestJWT(id, email);
+    const result = await usersTestClient.me(
+      undefined,
+      createAuthOpts(token)
+    );
+
+    expect(result.user.email).toBe(email);
+  });
+});
+```
+✅ **Pattern**: DB setup + service call for testing
+✅ **Purpose**: Test API business logic
+✅ **Key**: Use `createAuthOpts()` to pass auth context
+
+**Layer 4: E2E Tests** - Critical production flows (minimal)
+```typescript
+// users/__tests__/e2e.test.ts
+describe("E2E: User Lifecycle", () => {
+  it("should handle signup → profile → update flow", async () => {
+    // Simulate Supabase webhook
+    await webhookApi.userCreated(payload);
+
+    // User logs in and fetches profile
+    const token = await generateTestJWT(id, email);
+    const profile = await userApi.getMe(token);
+
+    // User updates profile
+    await userApi.updateMe({ name: "New" }, token);
+
+    // Verify persistence
+    const updated = await userApi.getMe(token);
+    expect(updated.data.user.name).toBe("New");
+  });
+});
+```
+✅ **Pattern**: All service calls (webhook → API)
+✅ **Purpose**: Test complete production workflows
+✅ **Key**: Keep minimal (3-5 tests), test critical flows only
+
+### Critical Testing Rules
+
+**1. Never Mix Layers**
+```typescript
+// ❌ WRONG: Mixing DB and service calls
+await userRepo.create({ ... });  // DB operation
+await userApi.getMe(token);      // Service call
+// → Transaction isolation breaks this!
+
+// ✅ CORRECT: Stay at one layer
+await userRepo.create({ ... });  // DB operation
+await userRepo.findById(id);     // DB operation
+```
+
+**2. Webhooks Are NOT Test Helpers**
+```typescript
+// ❌ WRONG: Using webhook for API test setup
+await webhookApi.userCreated(payload);  // External integration
+await userApi.updateMe({ name }, token);  // Testing API logic
+// → Conflates concerns
+
+// ✅ CORRECT: Use direct DB for API test setup
+await userRepo.create({ id, email });  // Test fixture
+await userApi.updateMe({ name }, token);  // Testing API logic
+```
+
+**3. Each Test Layer Has ONE Purpose**
+- Repository tests → Test data access
+- Webhook tests → Test external integrations
+- API Handler tests → Test business logic
+- E2E tests → Test critical workflows
+
+### Running Tests
+
+```bash
+# Run all tests
+encore test
+
+# Run specific service tests
+encore test users/__tests__/
+encore test bookmarks/__tests__/
+
+# Run specific test file
+encore test users/__tests__/user.repository.test.ts
+encore test users/__tests__/api-handlers.test.ts
+
+# Type check before testing
+npx tsc --noEmit
+```
+
 ### Before Committing
-1. Run `npx tsc --noEmit` - Check types
-2. Run `encore run` - Verify no errors
-3. Check logs for warnings
-4. Verify migrations apply cleanly
-5. Test affected endpoints
+
+1. ✅ Run `npx tsc --noEmit` - Check TypeScript types
+2. ✅ Run `encore test` - Verify all tests pass
+3. ✅ Run `encore run` - Verify server starts
+4. ✅ Check logs for warnings
+5. ✅ Verify migrations apply cleanly
 
 ### Manual Testing
+
 ```bash
 # Create a bookmark
 curl -X POST http://localhost:4000/bookmarks \
@@ -729,6 +1014,54 @@ psql "$(encore db conn-uri bookmarks)" -c "
   ORDER BY created_at DESC
   LIMIT 5;
 "
+
+# Test user API
+TOKEN="your-jwt-token"
+curl -X GET http://localhost:4000/users/me \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Common Testing Mistakes
+
+**Mistake 1**: Using webhooks for API test setup
+```typescript
+// ❌ WRONG
+await webhookApi.userCreated(payload);  // Webhook is external integration
+const response = await userApi.updateMe({ name }, token);
+
+// ✅ CORRECT
+await userRepo.create({ id, email });  // Direct DB fixture
+const response = await userApi.updateMe({ name }, token);
+```
+
+**Mistake 2**: Mixing DB writes with service calls
+```typescript
+// ❌ WRONG - Transaction isolation
+await userRepo.create({ id, email });  // Transaction A
+const result = await userApi.getMe(token);  // Transaction B (404!)
+
+// ✅ CORRECT - Stay at one layer
+await userRepo.create({ id, email });
+const found = await userRepo.findById(id);  // Same transaction
+```
+
+**Mistake 3**: Too many E2E tests
+```typescript
+// ❌ WRONG - E2E for every scenario
+describe("E2E", () => {
+  it("test scenario 1", ...);
+  it("test scenario 2", ...);
+  it("test scenario 3", ...);
+  // ... 20 more tests
+});
+
+// ✅ CORRECT - E2E for critical flows only
+describe("E2E", () => {
+  it("complete user lifecycle", ...);  // Critical flow
+  it("webhook idempotency", ...);      // Critical flow
+  it("auth failures", ...);            // Critical flow
+  // Keep to 3-5 tests
+});
 ```
 
 ---
@@ -746,6 +1079,9 @@ psql "$(encore db conn-uri bookmarks)" -c "
 9. **Config is centralized** - Never hardcode
 10. **Types are organized** - Separate domain/API/external/events
 11. **One file, one job** - Single Responsibility always
+12. **Test layer separation** - Never mix DB writes with service calls (transaction isolation)
+13. **Webhooks are integration points** - NOT test helpers
+14. **Each test layer has ONE purpose** - Repository, Webhook, API Handler, E2E
 
 ---
 
@@ -816,5 +1152,8 @@ encore logs --env=local     # View application logs
 - Mix concerns (business logic in repositories)
 - Leave dead code or unused variables
 - Use generic error messages
+- Mix DB writes with service calls in tests (transaction isolation!)
+- Use webhooks as test helpers (they're external integrations)
+- Write too many E2E tests (keep to 3-5 critical flows)
 
 **Remember**: Quality over speed. Understand first, code second. Use tools to verify everything.
