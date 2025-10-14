@@ -7,6 +7,7 @@ import {
   TranscriptionSummary,
   BookmarkSource,
   DigestGenerationOptions,
+  DigestContentItem,
 } from "../types";
 import { DailyDigestRepository } from "../repositories/daily-digest.repository";
 import {
@@ -74,22 +75,24 @@ export class DailyDigestService {
         endDate: endDate.toISOString(),
       });
 
-      // Step 3: Fetch completed transcriptions
-      const transcriptions = await this.fetchTranscriptionsForDate(
+      // Step 3: Fetch all content (audio + web)
+      const contentItems = await this.fetchContentForDate(
         startDate,
         endDate,
         userId
       );
 
-      log.info("Fetched transcriptions for digest", {
+      log.info("Fetched content for digest", {
         digestDate: digestDateStr,
-        transcriptionCount: transcriptions.length,
+        totalItems: contentItems.length,
+        audioCount: contentItems.filter(c => c.content_type === 'audio').length,
+        articleCount: contentItems.filter(c => c.content_type === 'article').length,
       });
 
       // Step 4: Calculate metadata
-      const bookmarkCount = transcriptions.length;
-      const sourcesBreakdown = this.calculateSourcesBreakdown(transcriptions);
-      const totalDuration = this.calculateTotalDuration(transcriptions);
+      const bookmarkCount = contentItems.length;
+      const sourcesBreakdown = this.calculateSourcesBreakdown(contentItems);
+      const totalDuration = this.calculateTotalDuration(contentItems);
 
       log.info("Calculated digest metadata", {
         digestDate: digestDateStr,
@@ -108,12 +111,12 @@ export class DailyDigestService {
       } else {
         // Create new digest
         digest = await this.digestRepo.create({
-          digest_date: date,
-          user_id: userId || null,
-          bookmark_count: bookmarkCount,
-          sources_breakdown: sourcesBreakdown,
-          date_range_start: startDate,
-          date_range_end: endDate,
+          digestDate: date,
+          userId: userId || null,
+          bookmarkCount: bookmarkCount,
+          sourcesBreakdown: sourcesBreakdown,
+          dateRangeStart: startDate,
+          dateRangeEnd: endDate,
         });
       }
 
@@ -123,9 +126,9 @@ export class DailyDigestService {
         status: "processing",
       });
 
-      // Step 6: Generate unified summary using map-reduce
+      // Step 6: Generate unified summary using map-reduce (audio + web content)
       const startTime = Date.now();
-      const digestContent = await this.generateUnifiedSummary(transcriptions);
+      const digestContent = await this.generateUnifiedSummary(contentItems);
       const processingDurationMs = Date.now() - startTime;
 
       // Step 7: Prepare processing metadata
@@ -204,30 +207,63 @@ export class DailyDigestService {
   }
 
   /**
-   * Fetches completed transcriptions for the given date range
+   * Fetches all content (audio transcriptions + web content) for the given date range
+   * Returns unified DigestContentItem format
    */
-  private async fetchTranscriptionsForDate(
+  private async fetchContentForDate(
     startDate: Date,
     endDate: Date,
     userId?: string
-  ): Promise<TranscriptionSummary[]> {
-    return await this.digestRepo.getCompletedTranscriptionsInRange(
+  ): Promise<DigestContentItem[]> {
+    // Fetch audio transcriptions
+    const transcriptions = await this.digestRepo.getCompletedTranscriptionsInRange(
       startDate,
       endDate,
       userId
     );
+
+    // Fetch web content
+    const webContent = await this.digestRepo.getCompletedWebContentInRange(
+      startDate,
+      endDate,
+      userId
+    );
+
+    // Convert transcriptions to unified format
+    const transcriptionItems: DigestContentItem[] = transcriptions.map(t => ({
+      bookmark_id: t.bookmark_id,
+      content_type: 'audio' as const,
+      summary: t.summary || t.deepgram_summary || "",
+      source: t.source,
+      duration: t.duration || undefined,
+      created_at: t.created_at,
+    }));
+
+    // Combine both content types
+    const allItems = [...transcriptionItems, ...webContent];
+
+    log.info("Fetched content for digest", {
+      audioCount: transcriptionItems.length,
+      articleCount: webContent.length,
+      totalCount: allItems.length,
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+    });
+
+    return allItems;
   }
 
   /**
    * Calculates breakdown of bookmarks by source
+   * Works with unified DigestContentItem format (audio + web)
    */
   private calculateSourcesBreakdown(
-    transcriptions: TranscriptionSummary[]
+    items: DigestContentItem[]
   ): SourcesBreakdown {
     const breakdown: SourcesBreakdown = {};
 
-    for (const transcription of transcriptions) {
-      const source = transcription.source;
+    for (const item of items) {
+      const source = item.source;
       breakdown[source] = (breakdown[source] || 0) + 1;
     }
 
@@ -235,10 +271,17 @@ export class DailyDigestService {
   }
 
   /**
-   * Calculates total duration of all transcriptions in seconds
+   * Calculates total duration of all audio content in seconds
+   * Web content (articles) do not have duration
    */
-  private calculateTotalDuration(transcriptions: TranscriptionSummary[]): number {
-    return transcriptions.reduce((total, t) => total + (t.duration || 0), 0);
+  private calculateTotalDuration(items: DigestContentItem[]): number {
+    return items.reduce((total, item) => {
+      // Only audio items have duration
+      if (item.content_type === 'audio' && item.duration) {
+        return total + item.duration;
+      }
+      return total;
+    }, 0);
   }
 
   // ============================================
@@ -246,23 +289,25 @@ export class DailyDigestService {
   // ============================================
 
   /**
-   * Generates a unified summary from all transcriptions
+   * Generates a unified summary from all content (audio + web)
    * Uses map-reduce for intelligent synthesis across any volume
    *
-   * @param transcriptions - All completed transcriptions for the date
+   * @param contentItems - All completed content items (audio + web) for the date
    * @returns Unified digest summary text
    */
   private async generateUnifiedSummary(
-    transcriptions: TranscriptionSummary[]
+    contentItems: DigestContentItem[]
   ): Promise<string | null> {
-    // If no transcriptions, return null
-    if (transcriptions.length === 0) {
-      log.info("No transcriptions to summarize");
+    // If no content, return null
+    if (contentItems.length === 0) {
+      log.info("No content items to summarize");
       return null;
     }
 
     log.info("Generating unified summary with map-reduce", {
-      transcriptionCount: transcriptions.length,
+      contentItemCount: contentItems.length,
+      audioCount: contentItems.filter(c => c.content_type === 'audio').length,
+      articleCount: contentItems.filter(c => c.content_type === 'article').length,
     });
 
     try {
@@ -270,21 +315,23 @@ export class DailyDigestService {
       const { secret } = await import("encore.dev/config");
       const openaiApiKey = secret("OpenAIAPIKey");
 
-      // Use MapReduceDigestService for all digests
+      // Use MapReduceDigestService for all digests (now handles unified content)
       const { MapReduceDigestService } = await import("./map-reduce-digest.service");
       const mapReduceService = new MapReduceDigestService(openaiApiKey());
 
-      const digest = await mapReduceService.generateDigest(transcriptions);
+      const digest = await mapReduceService.generateDigest(contentItems);
 
       log.info("Unified summary generated successfully", {
-        transcriptionCount: transcriptions.length,
+        contentItemCount: contentItems.length,
+        audioCount: contentItems.filter(c => c.content_type === 'audio').length,
+        articleCount: contentItems.filter(c => c.content_type === 'article').length,
         digestLength: digest.length,
       });
 
       return digest;
     } catch (error) {
       log.error(error, "Failed to generate unified summary", {
-        transcriptionCount: transcriptions.length,
+        contentItemCount: contentItems.length,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
 

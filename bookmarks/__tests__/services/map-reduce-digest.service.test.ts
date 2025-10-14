@@ -11,20 +11,18 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BookmarkSource } from "../../types/domain.types";
-import type { TranscriptionSummary } from "../../types/daily-digest.types";
+import type { DigestContentItem } from "../../types/web-content.types";
 
 // Hoist mock functions for use in module mocks
 const {
   mockLLMInvoke,
   mockBatchSummaries,
   mockEstimateTokenCount,
-  mockFormatSummariesWithMetadata,
   mockLog,
 } = vi.hoisted(() => ({
   mockLLMInvoke: vi.fn(),
   mockBatchSummaries: vi.fn(),
   mockEstimateTokenCount: vi.fn(),
-  mockFormatSummariesWithMetadata: vi.fn(),
   mockLog: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -80,7 +78,7 @@ vi.mock("../../utils/token-estimator.util", () => ({
 vi.mock("../../config/prompts.config", () => ({
   MAP_REDUCE_MAP_PROMPT: "Map prompt: {batch_summaries}",
   MAP_REDUCE_REDUCE_PROMPT: "Reduce prompt: {intermediate_summaries}",
-  formatSummariesWithMetadata: mockFormatSummariesWithMetadata,
+  formatSourceName: vi.fn((source) => source),
 }));
 
 vi.mock("../../config/daily-digest.config", () => ({
@@ -107,36 +105,36 @@ describe("MapReduceDigestService", () => {
     vi.restoreAllMocks();
   });
 
-  // Helper to create mock transcription
-  const createMockTranscription = (
+  // Helper to create mock content item (audio or article)
+  const createMockContentItem = (
     id: number,
     summary: string,
-    source: BookmarkSource = BookmarkSource.YOUTUBE
-  ): TranscriptionSummary => ({
+    source: BookmarkSource = BookmarkSource.YOUTUBE,
+    contentType: 'audio' | 'article' = 'audio'
+  ): DigestContentItem => ({
     bookmark_id: id,
-    transcript: `Transcript ${id}`,
+    content_type: contentType,
     summary,
-    deepgram_summary: null,
     source,
-    duration: 120,
-    sentiment: "neutral",
+    duration: contentType === 'audio' ? 120 : undefined,
+    word_count: contentType === 'article' ? 500 : undefined,
+    reading_minutes: contentType === 'article' ? 3 : undefined,
     created_at: new Date(),
   });
 
-  describe("Single Transcription", () => {
-    it("should handle single transcription without batching", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
+  describe("Single Content Item", () => {
+    it("should handle single content item without batching", async () => {
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
       ];
 
       mockEstimateTokenCount.mockReturnValue(100);
       mockBatchSummaries.mockReturnValue([["Summary 1"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted: Summary 1");
       mockLLMInvoke.mockResolvedValue({
         content: "Map result: Analyzed summary 1",
       });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       expect(mockBatchSummaries).toHaveBeenCalledWith(["Summary 1"], 4000);
       expect(mockLLMInvoke).toHaveBeenCalledTimes(1);
@@ -144,38 +142,36 @@ describe("MapReduceDigestService", () => {
     });
 
     it("should use summary if available, fallback to deepgram_summary", async () => {
-      const transcriptions = [
+      const contentItems = [
         {
-          ...createMockTranscription(1, null as any, BookmarkSource.PODCAST),
+          ...createMockContentItem(1, null as any, BookmarkSource.PODCAST),
           deepgram_summary: "Deepgram summary",
         },
       ];
 
       mockEstimateTokenCount.mockReturnValue(100);
       mockBatchSummaries.mockReturnValue([["Deepgram summary"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted: Deepgram summary");
-      mockLLMInvoke.mockResolvedValue({ content: "Analyzed" });
+mockLLMInvoke.mockResolvedValue({ content: "Analyzed" });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       expect(mockBatchSummaries).toHaveBeenCalledWith(["Deepgram summary"], 4000);
       expect(result).toBe("Analyzed");
     });
 
     it("should handle missing summary with fallback text", async () => {
-      const transcriptions = [
+      const contentItems = [
         {
-          ...createMockTranscription(1, null as any, BookmarkSource.BLOG),
+          ...createMockContentItem(1, null as any, BookmarkSource.BLOG),
           deepgram_summary: null,
         },
       ];
 
       mockEstimateTokenCount.mockReturnValue(50);
       mockBatchSummaries.mockReturnValue([["No summary available"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted: No summary");
-      mockLLMInvoke.mockResolvedValue({ content: "Processed" });
+mockLLMInvoke.mockResolvedValue({ content: "Processed" });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       expect(mockBatchSummaries).toHaveBeenCalledWith(["No summary available"], 4000);
     });
@@ -183,20 +179,19 @@ describe("MapReduceDigestService", () => {
 
   describe("Multiple Transcriptions - Small Batch", () => {
     it("should handle multiple transcriptions in single batch", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockTranscription(2, "Summary 2", BookmarkSource.PODCAST),
-        createMockTranscription(3, "Summary 3", BookmarkSource.BLOG),
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
+        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
+        createMockContentItem(3, "Summary 3", BookmarkSource.BLOG),
       ];
 
       mockEstimateTokenCount.mockReturnValue(200);
       mockBatchSummaries.mockReturnValue([["Summary 1", "Summary 2", "Summary 3"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted batch");
-      mockLLMInvoke.mockResolvedValue({
+mockLLMInvoke.mockResolvedValue({
         content: "Analyzed 3 summaries",
       });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       expect(mockBatchSummaries).toHaveBeenCalledWith(
         ["Summary 1", "Summary 2", "Summary 3"],
@@ -209,11 +204,11 @@ describe("MapReduceDigestService", () => {
 
   describe("Multiple Transcriptions - Multiple Batches", () => {
     it("should batch and process multiple batches in map phase", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockTranscription(2, "Summary 2", BookmarkSource.PODCAST),
-        createMockTranscription(3, "Summary 3", BookmarkSource.BLOG),
-        createMockTranscription(4, "Summary 4", BookmarkSource.YOUTUBE),
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
+        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
+        createMockContentItem(3, "Summary 3", BookmarkSource.BLOG),
+        createMockContentItem(4, "Summary 4", BookmarkSource.YOUTUBE),
       ];
 
       mockEstimateTokenCount.mockReturnValue(300);
@@ -222,7 +217,7 @@ describe("MapReduceDigestService", () => {
         ["Summary 1", "Summary 2"],
         ["Summary 3", "Summary 4"],
       ]);
-      mockFormatSummariesWithMetadata
+      vi.fn()
         .mockReturnValueOnce("Formatted batch 1")
         .mockReturnValueOnce("Formatted batch 2");
 
@@ -233,7 +228,7 @@ describe("MapReduceDigestService", () => {
         // Reduce phase combines them
         .mockResolvedValueOnce({ content: "Final digest combining both" });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       expect(mockBatchSummaries).toHaveBeenCalled();
       expect(mockLLMInvoke).toHaveBeenCalledTimes(3); // 2 map + 1 reduce
@@ -241,8 +236,8 @@ describe("MapReduceDigestService", () => {
     });
 
     it("should process map batches in parallel", async () => {
-      const transcriptions = Array.from({ length: 10 }, (_, i) =>
-        createMockTranscription(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
+      const contentItems = Array.from({ length: 10 }, (_, i) =>
+        createMockContentItem(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
       );
 
       mockEstimateTokenCount.mockReturnValue(500);
@@ -252,7 +247,7 @@ describe("MapReduceDigestService", () => {
         ["Summary 4", "Summary 5", "Summary 6"],
         ["Summary 7", "Summary 8", "Summary 9", "Summary 10"],
       ]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
 
       let mapCallCount = 0;
       mockLLMInvoke.mockImplementation(() => {
@@ -264,7 +259,7 @@ describe("MapReduceDigestService", () => {
         }
       });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       expect(mockLLMInvoke).toHaveBeenCalledTimes(4); // 3 map + 1 reduce
       expect(result).toBe("Final reduce result");
@@ -273,21 +268,21 @@ describe("MapReduceDigestService", () => {
 
   describe("Reduce Phase", () => {
     it("should combine multiple intermediate summaries", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockTranscription(2, "Summary 2", BookmarkSource.PODCAST),
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
+        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
       ];
 
       mockEstimateTokenCount.mockReturnValue(200);
       mockBatchSummaries.mockReturnValue([["Summary 1"], ["Summary 2"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
 
       mockLLMInvoke
         .mockResolvedValueOnce({ content: "Intermediate 1" })
         .mockResolvedValueOnce({ content: "Intermediate 2" })
         .mockResolvedValueOnce({ content: "Final combined digest" });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       // Check that reduce prompt was called with both intermediates
       const reduceCall = mockLLMInvoke.mock.calls[2][0];
@@ -297,16 +292,16 @@ describe("MapReduceDigestService", () => {
     });
 
     it("should skip reduce phase with single intermediate", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
       ];
 
       mockEstimateTokenCount.mockReturnValue(100);
       mockBatchSummaries.mockReturnValue([["Summary 1"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
       mockLLMInvoke.mockResolvedValue({ content: "Single intermediate" });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       expect(mockLLMInvoke).toHaveBeenCalledTimes(1); // Only map, no reduce
       expect(result).toBe("Single intermediate");
@@ -315,18 +310,18 @@ describe("MapReduceDigestService", () => {
 
   describe("Token Estimation and Batching", () => {
     it("should estimate tokens for each summary", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Short", BookmarkSource.YOUTUBE),
-        createMockTranscription(2, "Medium length summary", BookmarkSource.PODCAST),
-        createMockTranscription(3, "Very long summary text", BookmarkSource.BLOG),
+      const contentItems = [
+        createMockContentItem(1, "Short", BookmarkSource.YOUTUBE),
+        createMockContentItem(2, "Medium length summary", BookmarkSource.PODCAST),
+        createMockContentItem(3, "Very long summary text", BookmarkSource.BLOG),
       ];
 
       mockEstimateTokenCount.mockReturnValueOnce(10).mockReturnValueOnce(50).mockReturnValueOnce(100);
       mockBatchSummaries.mockReturnValue([["Short", "Medium length summary", "Very long summary text"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
       mockLLMInvoke.mockResolvedValue({ content: "Result" });
 
-      await service.generateDigest(transcriptions);
+      await service.generateDigest(contentItems);
 
       expect(mockEstimateTokenCount).toHaveBeenCalledTimes(3);
       expect(mockEstimateTokenCount).toHaveBeenCalledWith("Short");
@@ -335,8 +330,8 @@ describe("MapReduceDigestService", () => {
     });
 
     it("should batch summaries based on token limits", async () => {
-      const transcriptions = Array.from({ length: 20 }, (_, i) =>
-        createMockTranscription(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
+      const contentItems = Array.from({ length: 20 }, (_, i) =>
+        createMockContentItem(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
       );
 
       mockEstimateTokenCount.mockReturnValue(1000);
@@ -346,10 +341,10 @@ describe("MapReduceDigestService", () => {
         Array.from({ length: 5 }, (_, i) => `Summary ${i + 11}`),
         Array.from({ length: 5 }, (_, i) => `Summary ${i + 16}`),
       ]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
       mockLLMInvoke.mockResolvedValue({ content: "Result" });
 
-      await service.generateDigest(transcriptions);
+      await service.generateDigest(contentItems);
 
       expect(mockBatchSummaries).toHaveBeenCalledWith(
         expect.any(Array),
@@ -360,68 +355,68 @@ describe("MapReduceDigestService", () => {
 
   describe("Error Handling", () => {
     it("should handle LangChain LLM invocation failure", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
       ];
 
       mockEstimateTokenCount.mockReturnValue(100);
       mockBatchSummaries.mockReturnValue([["Summary 1"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
       mockLLMInvoke.mockRejectedValue(new Error("OpenAI API error"));
 
-      await expect(service.generateDigest(transcriptions)).rejects.toThrow(
+      await expect(service.generateDigest(contentItems)).rejects.toThrow(
         "Map-reduce digest generation failed: OpenAI API error"
       );
     });
 
     it("should handle map phase failure", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockTranscription(2, "Summary 2", BookmarkSource.PODCAST),
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
+        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
       ];
 
       mockEstimateTokenCount.mockReturnValue(200);
       mockBatchSummaries.mockReturnValue([["Summary 1"], ["Summary 2"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
       mockLLMInvoke
         .mockResolvedValueOnce({ content: "Success" })
         .mockRejectedValueOnce(new Error("Map batch failed"));
 
-      await expect(service.generateDigest(transcriptions)).rejects.toThrow(
+      await expect(service.generateDigest(contentItems)).rejects.toThrow(
         "Map-reduce digest generation failed"
       );
     });
 
     it("should handle reduce phase failure", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockTranscription(2, "Summary 2", BookmarkSource.PODCAST),
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
+        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
       ];
 
       mockEstimateTokenCount.mockReturnValue(200);
       mockBatchSummaries.mockReturnValue([["Summary 1"], ["Summary 2"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
       mockLLMInvoke
         .mockResolvedValueOnce({ content: "Intermediate 1" })
         .mockResolvedValueOnce({ content: "Intermediate 2" })
         .mockRejectedValueOnce(new Error("Reduce failed"));
 
-      await expect(service.generateDigest(transcriptions)).rejects.toThrow(
+      await expect(service.generateDigest(contentItems)).rejects.toThrow(
         "Map-reduce digest generation failed: Reduce failed"
       );
     });
 
     it("should handle non-Error exceptions", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
       ];
 
       mockEstimateTokenCount.mockReturnValue(100);
       mockBatchSummaries.mockReturnValue([["Summary 1"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
       mockLLMInvoke.mockRejectedValue("String error");
 
-      await expect(service.generateDigest(transcriptions)).rejects.toThrow(
+      await expect(service.generateDigest(contentItems)).rejects.toThrow(
         "Map-reduce digest generation failed: String error"
       );
     });
@@ -429,21 +424,21 @@ describe("MapReduceDigestService", () => {
 
   describe("Different Sources", () => {
     it("should handle mixed sources in digest", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "YouTube summary", BookmarkSource.YOUTUBE),
-        createMockTranscription(2, "Podcast summary", BookmarkSource.PODCAST),
-        createMockTranscription(3, "Blog summary", BookmarkSource.BLOG),
-        createMockTranscription(4, "Reddit summary", BookmarkSource.REDDIT),
+      const contentItems = [
+        createMockContentItem(1, "YouTube summary", BookmarkSource.YOUTUBE),
+        createMockContentItem(2, "Podcast summary", BookmarkSource.PODCAST),
+        createMockContentItem(3, "Blog summary", BookmarkSource.BLOG),
+        createMockContentItem(4, "Reddit summary", BookmarkSource.REDDIT),
       ];
 
       mockEstimateTokenCount.mockReturnValue(200);
       mockBatchSummaries.mockReturnValue([
         ["YouTube summary", "Podcast summary", "Blog summary", "Reddit summary"],
       ]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Mixed sources formatted");
+      vi.fn().mockReturnValue("Mixed sources formatted");
       mockLLMInvoke.mockResolvedValue({ content: "Multi-source digest" });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       expect(result).toBe("Multi-source digest");
       expect(mockFormatSummariesWithMetadata).toHaveBeenCalled();
@@ -452,8 +447,8 @@ describe("MapReduceDigestService", () => {
 
   describe("Large Scale Processing", () => {
     it("should handle 100+ transcriptions efficiently", async () => {
-      const transcriptions = Array.from({ length: 100 }, (_, i) =>
-        createMockTranscription(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
+      const contentItems = Array.from({ length: 100 }, (_, i) =>
+        createMockContentItem(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
       );
 
       mockEstimateTokenCount.mockReturnValue(300);
@@ -462,7 +457,7 @@ describe("MapReduceDigestService", () => {
         Array.from({ length: 10 }, (_, i) => `Summary ${batchIdx * 10 + i + 1}`)
       );
       mockBatchSummaries.mockReturnValue(batches);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
 
       let callCount = 0;
       mockLLMInvoke.mockImplementation(() => {
@@ -474,7 +469,7 @@ describe("MapReduceDigestService", () => {
         }
       });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       expect(mockBatchSummaries).toHaveBeenCalled();
       expect(mockLLMInvoke).toHaveBeenCalledTimes(11); // 10 map + 1 reduce
@@ -484,27 +479,27 @@ describe("MapReduceDigestService", () => {
 
   describe("Edge Cases", () => {
     it("should handle empty transcriptions array gracefully", async () => {
-      const transcriptions: TranscriptionSummary[] = [];
+      const transcriptions: DigestContentItem[] = [];
 
       mockEstimateTokenCount.mockReturnValue(0);
       mockBatchSummaries.mockReturnValue([]);
 
       // Should fail during map phase with empty batches
-      await expect(service.generateDigest(transcriptions)).rejects.toThrow();
+      await expect(service.generateDigest(contentItems)).rejects.toThrow();
     });
 
     it("should handle transcriptions with very long summaries", async () => {
       const longSummary = "Very long summary ".repeat(1000);
-      const transcriptions = [
-        createMockTranscription(1, longSummary, BookmarkSource.YOUTUBE),
+      const contentItems = [
+        createMockContentItem(1, longSummary, BookmarkSource.YOUTUBE),
       ];
 
       mockEstimateTokenCount.mockReturnValue(10000);
       mockBatchSummaries.mockReturnValue([[longSummary]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Long formatted");
+      vi.fn().mockReturnValue("Long formatted");
       mockLLMInvoke.mockResolvedValue({ content: "Processed long summary" });
 
-      const result = await service.generateDigest(transcriptions);
+      const result = await service.generateDigest(contentItems);
 
       expect(result).toBe("Processed long summary");
     });
@@ -512,20 +507,20 @@ describe("MapReduceDigestService", () => {
 
   describe("Logging and Observability", () => {
     it("should log successful digest generation", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockTranscription(2, "Summary 2", BookmarkSource.PODCAST),
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
+        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
       ];
 
       mockEstimateTokenCount.mockReturnValue(200);
       mockBatchSummaries.mockReturnValue([["Summary 1"], ["Summary 2"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
       mockLLMInvoke
         .mockResolvedValueOnce({ content: "Intermediate 1" })
         .mockResolvedValueOnce({ content: "Intermediate 2" })
         .mockResolvedValueOnce({ content: "Final digest" });
 
-      await service.generateDigest(transcriptions);
+      await service.generateDigest(contentItems);
 
       expect(mockLog.info).toHaveBeenCalledWith(
         "Map-reduce digest generation completed",
@@ -536,17 +531,17 @@ describe("MapReduceDigestService", () => {
     });
 
     it("should log errors when LLM invocation fails", async () => {
-      const transcriptions = [
-        createMockTranscription(1, "Summary 1", BookmarkSource.YOUTUBE),
+      const contentItems = [
+        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
       ];
 
       const llmError = new Error("OpenAI API error");
       mockEstimateTokenCount.mockReturnValue(100);
       mockBatchSummaries.mockReturnValue([["Summary 1"]]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
       mockLLMInvoke.mockRejectedValue(llmError);
 
-      await expect(service.generateDigest(transcriptions)).rejects.toThrow();
+      await expect(service.generateDigest(contentItems)).rejects.toThrow();
 
       expect(mockLog.error).toHaveBeenCalledWith(
         llmError,
@@ -555,8 +550,8 @@ describe("MapReduceDigestService", () => {
     });
 
     it("should log map phase progress", async () => {
-      const transcriptions = Array.from({ length: 10 }, (_, i) =>
-        createMockTranscription(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
+      const contentItems = Array.from({ length: 10 }, (_, i) =>
+        createMockContentItem(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
       );
 
       mockEstimateTokenCount.mockReturnValue(500);
@@ -565,10 +560,10 @@ describe("MapReduceDigestService", () => {
         ["Summary 4", "Summary 5", "Summary 6"],
         ["Summary 7", "Summary 8", "Summary 9", "Summary 10"],
       ]);
-      mockFormatSummariesWithMetadata.mockReturnValue("Formatted");
+      vi.fn().mockReturnValue("Formatted");
       mockLLMInvoke.mockResolvedValue({ content: "Result" });
 
-      await service.generateDigest(transcriptions);
+      await service.generateDigest(contentItems);
 
       expect(mockLog.info).toHaveBeenCalledWith(
         "Map phase completed",

@@ -6,6 +6,7 @@ import {
   ProcessingMetadata,
   TranscriptionSummary,
   BookmarkSource,
+  DigestContentItem,
 } from "../types";
 
 /**
@@ -319,5 +320,44 @@ export class DailyDigestRepository {
     }
 
     return transcriptions;
+  }
+
+  /**
+   * Gets completed web content within a date range
+   * Returns DigestContentItem format for unified processing
+   * CRITICAL: Filters by userId to ensure users only see their own data
+   */
+  async getCompletedWebContentInRange(
+    startDate: Date,
+    endDate: Date,
+    userId?: string
+  ): Promise<DigestContentItem[]> {
+    const userIdValue = userId !== undefined ? userId : null;
+
+    const query = this.db.query<DigestContentItem>`
+      SELECT
+        wc.bookmark_id,
+        'article' as content_type,
+        wc.summary,
+        b.source,
+        wc.word_count,
+        wc.estimated_reading_minutes as reading_minutes,
+        wc.created_at
+      FROM web_contents wc
+      INNER JOIN bookmarks b ON wc.bookmark_id = b.id
+      WHERE wc.status = 'completed'
+        AND wc.summary IS NOT NULL
+        AND wc.created_at >= ${startDate}
+        AND wc.created_at <= ${endDate}
+        AND b.user_id IS NOT DISTINCT FROM ${userIdValue}
+      ORDER BY wc.created_at DESC
+    `;
+
+    const items: DigestContentItem[] = [];
+    for await (const item of query) {
+      items.push(item);
+    }
+
+    return items;
   }
 }

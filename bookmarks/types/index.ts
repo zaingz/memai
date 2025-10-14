@@ -14,3 +14,6 @@ export * from "./deepgram.types";
 
 // Daily digest types
 export * from "./daily-digest.types";
+
+// Web content types
+export * from "./web-content.types";

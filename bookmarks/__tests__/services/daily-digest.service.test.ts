@@ -11,6 +11,7 @@ import {
   BookmarkSource,
   TranscriptionSummary,
   DailyDigest,
+  DigestContentItem,
 } from "../../types";
 
 // Hoist mock functions so they're available in mock factories
@@ -54,6 +55,7 @@ describe("DailyDigestService", () => {
       markAsProcessing: vi.fn(),
       markAsCompleted: vi.fn(),
       getCompletedTranscriptionsInRange: vi.fn(),
+      getCompletedWebContentInRange: vi.fn(),
       list: vi.fn(),
     };
 
@@ -81,6 +83,21 @@ describe("DailyDigestService", () => {
       source,
       duration,
       sentiment: "neutral" as const,
+      created_at: new Date(),
+    });
+
+    const createMockWebContent = (
+      id: number,
+      source: BookmarkSource,
+      wordCount: number = 1000,
+      summary: string = "Test web summary"
+    ): DigestContentItem => ({
+      bookmark_id: id,
+      content_type: 'article' as const,
+      summary,
+      source,
+      word_count: wordCount,
+      reading_minutes: Math.ceil(wordCount / 200),
       created_at: new Date(),
     });
 
@@ -158,6 +175,7 @@ describe("DailyDigestService", () => {
         });
 
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.markAsProcessing.mockResolvedValue(undefined);
       mockRepo.markAsCompleted.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Generated digest");
@@ -169,7 +187,25 @@ describe("DailyDigestService", () => {
       });
 
       expect(mockRepo.markAsProcessing).toHaveBeenCalledWith(failedDigest.id);
-      expect(mockGenerateDigest).toHaveBeenCalledWith(transcriptions);
+      // Verify generateDigest received unified DigestContentItem format (audio items)
+      expect(mockGenerateDigest).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            bookmark_id: 1,
+            content_type: 'audio',
+            summary: expect.any(String),
+            source: BookmarkSource.YOUTUBE,
+            duration: 300,
+          }),
+          expect.objectContaining({
+            bookmark_id: 2,
+            content_type: 'audio',
+            summary: expect.any(String),
+            source: BookmarkSource.PODCAST,
+            duration: 300,
+          }),
+        ])
+      );
       expect(mockRepo.markAsCompleted).toHaveBeenCalledWith(
         failedDigest.id,
         "Generated digest",
@@ -194,6 +230,7 @@ describe("DailyDigestService", () => {
         });
 
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.markAsProcessing.mockResolvedValue(undefined);
       mockRepo.markAsCompleted.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Regenerated digest");
@@ -226,6 +263,7 @@ describe("DailyDigestService", () => {
         });
 
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
       mockRepo.markAsCompleted.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("New digest content");
@@ -237,15 +275,31 @@ describe("DailyDigestService", () => {
       });
 
       expect(mockRepo.create).toHaveBeenCalledWith({
-        digest_date: testDate,
-        user_id: userId,
-        bookmark_count: 3,
-        sources_breakdown: { youtube: 2, podcast: 1 },
-        date_range_start: expect.any(Date),
-        date_range_end: expect.any(Date),
+        digestDate: testDate,
+        userId: userId,
+        bookmarkCount: 3,
+        sourcesBreakdown: { youtube: 2, podcast: 1 },
+        dateRangeStart: expect.any(Date),
+        dateRangeEnd: expect.any(Date),
       });
 
-      expect(mockGenerateDigest).toHaveBeenCalledWith(transcriptions);
+      // Verify generateDigest received unified DigestContentItem format (audio items)
+      expect(mockGenerateDigest).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            content_type: 'audio',
+            source: BookmarkSource.YOUTUBE,
+          }),
+          expect.objectContaining({
+            content_type: 'audio',
+            source: BookmarkSource.YOUTUBE,
+          }),
+          expect.objectContaining({
+            content_type: 'audio',
+            source: BookmarkSource.PODCAST,
+          }),
+        ])
+      );
       expect(mockRepo.markAsCompleted).toHaveBeenCalledWith(
         newDigest.id,
         "New digest content",
@@ -266,6 +320,7 @@ describe("DailyDigestService", () => {
         });
 
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue([]);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
       mockRepo.markAsCompleted.mockResolvedValue(undefined);
 
@@ -275,12 +330,12 @@ describe("DailyDigestService", () => {
       });
 
       expect(mockRepo.create).toHaveBeenCalledWith({
-        digest_date: testDate,
-        user_id: null,
-        bookmark_count: 0,
-        sources_breakdown: {},
-        date_range_start: expect.any(Date),
-        date_range_end: expect.any(Date),
+        digestDate: testDate,
+        userId: null,
+        bookmarkCount: 0,
+        sourcesBreakdown: {},
+        dateRangeStart: expect.any(Date),
+        dateRangeEnd: expect.any(Date),
       });
 
       // Should not call map-reduce for empty list
@@ -310,6 +365,7 @@ describe("DailyDigestService", () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(newDigest);
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
       mockRepo.markAsCompleted.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Digest");
@@ -321,7 +377,7 @@ describe("DailyDigestService", () => {
 
       expect(mockRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          sources_breakdown: {
+          sourcesBreakdown: {
             youtube: 3,
             podcast: 1,
             reddit: 1,
@@ -343,6 +399,7 @@ describe("DailyDigestService", () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(newDigest);
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
       mockRepo.markAsCompleted.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Digest");
@@ -360,6 +417,105 @@ describe("DailyDigestService", () => {
       );
     });
 
+    it("should handle mixed content (audio + web)", async () => {
+      const transcriptions = [
+        createMockTranscription(1, BookmarkSource.YOUTUBE, 300),
+        createMockTranscription(2, BookmarkSource.PODCAST, 200),
+      ];
+
+      const webContent = [
+        createMockWebContent(3, BookmarkSource.BLOG, 1000),
+        createMockWebContent(4, BookmarkSource.REDDIT, 500),
+      ];
+
+      const newDigest = createMockDigest({ id: 101, bookmark_count: 4 });
+
+      mockRepo.findByDate
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          ...newDigest,
+          digest_content: "Mixed content digest",
+        });
+
+      mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue(webContent);
+      mockRepo.create.mockResolvedValue(newDigest);
+      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockGenerateDigest.mockResolvedValue("Mixed content digest");
+
+      const result = await service.generateDailyDigest({
+        date: testDate,
+        forceRegenerate: false,
+      });
+
+      // Verify digest was created with correct metadata
+      expect(mockRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bookmarkCount: 4, // 2 audio + 2 web
+          sourcesBreakdown: {
+            youtube: 1,
+            podcast: 1,
+            blog: 1,
+            reddit: 1,
+          },
+        })
+      );
+
+      // Verify total duration only includes audio (300 + 200)
+      expect(mockRepo.markAsCompleted).toHaveBeenCalledWith(
+        newDigest.id,
+        "Mixed content digest",
+        500, // Only audio duration
+        expect.any(Object)
+      );
+
+      // Verify mockGenerateDigest received unified content (both audio + articles)
+      expect(mockGenerateDigest).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          // Audio items
+          expect.objectContaining({
+            bookmark_id: 1,
+            content_type: 'audio',
+            source: BookmarkSource.YOUTUBE,
+            duration: 300,
+          }),
+          expect.objectContaining({
+            bookmark_id: 2,
+            content_type: 'audio',
+            source: BookmarkSource.PODCAST,
+            duration: 200,
+          }),
+          // Article items
+          expect.objectContaining({
+            bookmark_id: 3,
+            content_type: 'article',
+            source: BookmarkSource.BLOG,
+            word_count: 1000,
+          }),
+          expect.objectContaining({
+            bookmark_id: 4,
+            content_type: 'article',
+            source: BookmarkSource.REDDIT,
+            word_count: 500,
+          }),
+        ])
+      );
+
+      // Verify both queries were called
+      expect(mockRepo.getCompletedTranscriptionsInRange).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        undefined
+      );
+      expect(mockRepo.getCompletedWebContentInRange).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        undefined
+      );
+
+      expect(result.digest_content).toBe("Mixed content digest");
+    });
+
     it("should use correct date range for transcription fetch", async () => {
       const transcriptions = [createMockTranscription(1, BookmarkSource.YOUTUBE)];
       const newDigest = createMockDigest();
@@ -368,6 +524,7 @@ describe("DailyDigestService", () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(newDigest);
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
       mockRepo.markAsCompleted.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Digest");
@@ -403,6 +560,7 @@ describe("DailyDigestService", () => {
 
       mockRepo.findByDate.mockResolvedValue(null);
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
       mockGenerateDigest.mockRejectedValue(
         new Error("OpenAI API error")
@@ -423,6 +581,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue([
         createMockTranscription(1, BookmarkSource.YOUTUBE),
       ]);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockRejectedValue(new Error("Database connection error"));
 
       await expect(
@@ -438,6 +597,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockRejectedValue(
         new Error("Query timeout")
       );
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content (won't be called due to error)
 
       await expect(
         service.generateDailyDigest({
@@ -456,6 +616,7 @@ describe("DailyDigestService", () => {
         .mockResolvedValueOnce(null); // Cannot retrieve after completion
 
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
       mockRepo.markAsCompleted.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Digest");
@@ -476,6 +637,7 @@ describe("DailyDigestService", () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(newDigest);
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
       mockRepo.markAsCompleted.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Global digest");
@@ -488,7 +650,7 @@ describe("DailyDigestService", () => {
 
       expect(mockRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          user_id: null,
+          userId: null,
         })
       );
 

@@ -3,14 +3,41 @@ import { ChatOpenAI } from "@langchain/openai";
 import { loadSummarizationChain } from "langchain/chains";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { Document } from "@langchain/core/documents";
-import { TranscriptionSummary } from "../types/daily-digest.types";
+import { DigestContentItem } from "../types/web-content.types";
 import { DAILY_DIGEST_CONFIG } from "../config/daily-digest.config";
 import {
   MAP_REDUCE_MAP_PROMPT,
   MAP_REDUCE_REDUCE_PROMPT,
-  formatSummariesWithMetadata,
+  formatSourceName,
 } from "../config/prompts.config";
 import { batchSummaries, estimateTokenCount } from "../utils/token-estimator.util";
+
+/**
+ * Format DigestContentItems with metadata for LLM prompts
+ * Handles both audio and article content types
+ */
+function formatContentItemsWithMetadata(items: DigestContentItem[]): string {
+  return items.map((item, idx) => {
+    const sourceName = formatSourceName(item.source);
+    const contentType = item.content_type === 'audio' ? '🎧 Audio' : '📄 Article';
+
+    // Format duration for audio content
+    const durationStr = item.duration
+      ? ` (${Math.round(item.duration / 60)} min)`
+      : '';
+
+    // Format reading time for articles
+    const readingStr = item.reading_minutes
+      ? ` (${item.reading_minutes} min read)`
+      : '';
+
+    const timeInfo = item.content_type === 'audio' ? durationStr : readingStr;
+
+    return `${idx + 1}. ${contentType} - ${sourceName}${timeInfo}
+${item.summary}
+---`;
+  }).join('\n\n');
+}
 
 /**
  * Universal Map-Reduce Digest Service with LangChain
@@ -30,20 +57,20 @@ export class MapReduceDigestService {
 
   /**
    * Generates digest using LangChain map-reduce
-   * Intelligently handles any number of transcriptions
-   * @param transcriptions - Array of completed transcription summaries
+   * Intelligently handles any number of content items (audio + web)
+   * @param contentItems - Array of completed content items (audio transcriptions + web content)
    * @returns Final digest text
    */
-  async generateDigest(transcriptions: TranscriptionSummary[]): Promise<string> {
+  async generateDigest(contentItems: DigestContentItem[]): Promise<string> {
     log.info("Starting map-reduce digest generation", {
-      transcriptionCount: transcriptions.length,
+      contentItemCount: contentItems.length,
+      audioCount: contentItems.filter(c => c.content_type === 'audio').length,
+      articleCount: contentItems.filter(c => c.content_type === 'article').length,
     });
 
     try {
-      // Step 1: Prepare summaries and convert to text
-      const summaries = transcriptions.map((t) =>
-        t.summary || t.deepgram_summary || "No summary available"
-      );
+      // Step 1: Extract summaries from unified content items
+      const summaries = contentItems.map((item) => item.summary || "No summary available");
 
       log.info("Prepared summaries for processing", {
         summaryCount: summaries.length,
@@ -67,7 +94,7 @@ export class MapReduceDigestService {
       });
 
       // Step 3: Map phase - Process each batch
-      const intermediateSummaries = await this.mapPhase(batches, transcriptions);
+      const intermediateSummaries = await this.mapPhase(batches, contentItems);
 
       log.info("Map phase completed", {
         intermediateCount: intermediateSummaries.length,
@@ -91,15 +118,18 @@ export class MapReduceDigestService {
 
   /**
    * Map phase: Process batches of summaries in parallel
-   * @param batches - Array of summary batches
-   * @param transcriptions - Original transcription data for metadata
+   * @param batches - Array of summary batches (strings)
+   * @param contentItems - Original content items for metadata
    * @returns Array of intermediate summaries
    */
   private async mapPhase(
     batches: string[][],
-    transcriptions: TranscriptionSummary[]
+    contentItems: DigestContentItem[]
   ): Promise<string[]> {
     log.info("Starting map phase", { batchCount: batches.length });
+
+    // Track current index for matching summaries to content items
+    let currentIndex = 0;
 
     const mapPromises = batches.map(async (batch, batchIndex) => {
       log.info("Processing batch", {
@@ -107,29 +137,20 @@ export class MapReduceDigestService {
         batchSize: batch.length,
       });
 
-      // Find corresponding transcription objects for metadata
-      const batchTranscriptions = batch
-        .map((summary) => {
-          return transcriptions.find(
-            (t) => t.summary === summary || t.deepgram_summary === summary
-          );
-        })
-        .filter((t): t is TranscriptionSummary => t !== undefined);
+      // Get corresponding content items for this batch
+      const batchContentItems = contentItems.slice(
+        currentIndex,
+        currentIndex + batch.length
+      );
+      currentIndex += batch.length;
 
-      // Format with metadata
-      const formattedBatch = formatSummariesWithMetadata(batchTranscriptions);
+      // Format with metadata (audio vs article info)
+      const formattedBatch = formatContentItemsWithMetadata(batchContentItems);
 
       // Create document for LangChain
       const doc = new Document({
         pageContent: formattedBatch,
         metadata: { batchIndex },
-      });
-
-      // Create map-reduce chain
-      const chain = loadSummarizationChain(this.llm, {
-        type: "map_reduce",
-        combineMapPrompt: undefined, // We'll use custom reduce later
-        combinePrompt: undefined,
       });
 
       // Process with map prompt
@@ -181,21 +202,24 @@ export class MapReduceDigestService {
    * This is simpler but gives less control over prompts
    */
   async generateDigestWithChain(
-    transcriptions: TranscriptionSummary[]
+    contentItems: DigestContentItem[]
   ): Promise<string> {
     log.info("Using LangChain built-in map-reduce chain", {
-      transcriptionCount: transcriptions.length,
+      contentItemCount: contentItems.length,
+      audioCount: contentItems.filter(c => c.content_type === 'audio').length,
+      articleCount: contentItems.filter(c => c.content_type === 'article').length,
     });
 
     try {
-      // Convert summaries to documents
-      const docs = transcriptions.map(
-        (t, idx) =>
+      // Convert content items to documents
+      const docs = contentItems.map(
+        (item, idx) =>
           new Document({
-            pageContent: t.summary || t.deepgram_summary || "No summary",
+            pageContent: item.summary || "No summary",
             metadata: {
-              bookmarkId: t.bookmark_id,
-              source: t.source,
+              bookmarkId: item.bookmark_id,
+              source: item.source,
+              contentType: item.content_type,
               index: idx,
             },
           })
