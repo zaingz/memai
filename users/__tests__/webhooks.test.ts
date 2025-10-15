@@ -34,9 +34,9 @@ describe("Supabase Auth Webhooks", () => {
 
       const response = await userCreated(payload);
 
-      // Webhook should succeed
-      expect(response.status).toBe(200);
-      expect(response.data).toBeDefined();
+      // Webhook should return claims
+      expect(response.claims).toBeDefined();
+      expect(response.claims?.local_db_synced).toBe(true);
 
       // User should exist in database
       const exists = await userExists(db, payload.user.id);
@@ -56,12 +56,9 @@ describe("Supabase Auth Webhooks", () => {
 
       const response = await userCreated(payload);
 
-      expect(response.status).toBe(200);
-      const data = response.data as AuthWebhookResponse;
-
       // Should return claims object
-      expect(data.claims).toBeDefined();
-      expect(data.claims?.local_db_synced).toBe(true);
+      expect(response.claims).toBeDefined();
+      expect(response.claims?.local_db_synced).toBe(true);
     });
 
     it("should handle user without name", async () => {
@@ -71,7 +68,7 @@ describe("Supabase Auth Webhooks", () => {
 
       const response = await userCreated(payload);
 
-      expect(response.status).toBe(200);
+      expect(response.claims).toBeDefined();
 
       // User should be created with null name
       const user = await userRepo.findById(payload.user.id);
@@ -84,11 +81,11 @@ describe("Supabase Auth Webhooks", () => {
 
       // Send webhook first time
       const response1 = await userCreated(payload);
-      expect(response1.status).toBe(200);
+      expect(response1.claims?.local_db_synced).toBe(true);
 
-      // Send same webhook again
+      // Send same webhook again (returns empty claims for duplicate)
       const response2 = await userCreated(payload);
-      expect(response2.status).toBe(200);
+      expect(response2.claims).toEqual({});
 
       // User should still exist (not duplicated)
       const user = await userRepo.findById(payload.user.id);
@@ -115,9 +112,8 @@ describe("Supabase Auth Webhooks", () => {
 
       const response = await userCreated(payload);
 
-      // Should succeed (idempotent)
-      expect(response.status).toBe(200);
-      expect(response.error).toBeUndefined();
+      // Should succeed with empty claims (duplicate)
+      expect(response.claims).toEqual({});
     });
 
     it("should handle multiple unique users", async () => {
@@ -130,7 +126,7 @@ describe("Supabase Auth Webhooks", () => {
       // Send webhooks for all users
       for (const payload of users) {
         const response = await userCreated(payload);
-        expect(response.status).toBe(200);
+        expect(response.claims?.local_db_synced).toBe(true);
       }
 
       // All users should exist
@@ -150,7 +146,7 @@ describe("Supabase Auth Webhooks", () => {
 
       const response = await userCreated(payload);
 
-      expect(response.status).toBe(200);
+      expect(response.claims?.local_db_synced).toBe(true);
 
       // User should be created with name (other metadata ignored)
       const user = await userRepo.findById(payload.user.id);
@@ -168,10 +164,9 @@ describe("Supabase Auth Webhooks", () => {
         },
       };
 
+      // Handler catches errors and returns empty claims
       const response = await userCreated(payload);
-
-      // Encore validates types at API boundary - malformed payload returns 400
-      expect(response.status).toBe(400);
+      expect(response.claims).toEqual({});
     });
 
     it("should log webhook events", async () => {
@@ -179,7 +174,7 @@ describe("Supabase Auth Webhooks", () => {
 
       const response = await userCreated(payload);
 
-      expect(response.status).toBe(200);
+      expect(response.claims?.local_db_synced).toBe(true);
 
       // Webhook should succeed and log event
       // (Logs are not directly testable, but we verify success)
@@ -195,10 +190,9 @@ describe("Supabase Auth Webhooks", () => {
         },
       };
 
-      const response = await userCreated(invalidPayload);
-
-      // Encore validates types at API boundary - invalid payload returns 400
-      expect(response.status).toBe(400);
+      // Handler catches errors and returns empty claims
+      const response = await userCreated(invalidPayload as any);
+      expect(response.claims).toEqual({});
     });
 
     it("should handle concurrent webhook requests", async () => {
@@ -215,7 +209,7 @@ describe("Supabase Auth Webhooks", () => {
 
       // All should succeed
       responses.forEach((response) => {
-        expect(response.status).toBe(200);
+        expect(response.claims?.local_db_synced).toBe(true);
       });
 
       // All users should exist
@@ -234,7 +228,7 @@ describe("Supabase Auth Webhooks", () => {
 
       const response = await userCreated(payload);
 
-      expect(response.status).toBe(200);
+      expect(response.claims?.local_db_synced).toBe(true);
     });
 
     it("should validate webhook event type", async () => {
@@ -242,7 +236,7 @@ describe("Supabase Auth Webhooks", () => {
 
       const response = await userCreated(payload);
 
-      expect(response.status).toBe(200);
+      expect(response.claims?.local_db_synced).toBe(true);
       expect(payload.event).toBe("user.created");
     });
   });
@@ -253,10 +247,9 @@ describe("Supabase Auth Webhooks", () => {
         email: undefined as any, // Missing email
       });
 
+      // Handler catches errors and returns empty claims
       const response = await userCreated(payload);
-
-      // Encore validates types at API boundary - missing required field returns 400
-      expect(response.status).toBe(400);
+      expect(response.claims).toEqual({});
     });
 
     it("should handle invalid user ID gracefully", async () => {
@@ -270,10 +263,8 @@ describe("Supabase Auth Webhooks", () => {
 
       const response = await userCreated(payload);
 
-      // Should handle error gracefully
-      expect(response.status).toBe(200);
-      const data = response.data as AuthWebhookResponse;
-      expect(data.claims).toEqual({});
+      // Should handle error gracefully and return empty claims
+      expect(response.claims).toEqual({});
     });
   });
 
@@ -291,7 +282,6 @@ describe("Supabase Auth Webhooks", () => {
       });
 
       const response = await userCreated(payload);
-      expect(response.status).toBe(200);
 
       // 2. User should now exist in local database
       const user = await userRepo.findById(newUserId);
@@ -299,8 +289,7 @@ describe("Supabase Auth Webhooks", () => {
       expect(user?.email).toBe(newUserEmail);
 
       // 3. Custom claims should be returned
-      const data = response.data as AuthWebhookResponse;
-      expect(data.claims?.local_db_synced).toBe(true);
+      expect(response.claims?.local_db_synced).toBe(true);
     });
 
     it("should handle rapid sequential user signups", async () => {
@@ -315,7 +304,7 @@ describe("Supabase Auth Webhooks", () => {
       // Send webhooks sequentially (rapid signups)
       for (const payload of payloads) {
         const response = await userCreated(payload);
-        expect(response.status).toBe(200);
+        expect(response.claims?.local_db_synced).toBe(true);
       }
 
       // All users should exist

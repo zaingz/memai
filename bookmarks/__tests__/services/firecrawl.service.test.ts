@@ -413,6 +413,9 @@ describe("FirecrawlService", () => {
       const scrapePromise = service.scrape(testUrl).catch((e) => e);
       await vi.advanceTimersByTimeAsync(30000);
 
+      // Ensure all pending async operations complete
+      await vi.runOnlyPendingTimersAsync();
+
       const result = await scrapePromise;
       expect(result).toBeInstanceOf(Error);
       expect(result.message).toMatch(/Rate limited. Retry after: unknown/);

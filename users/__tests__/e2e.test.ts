@@ -19,7 +19,7 @@ import { MeResponse, UpdateProfileResponse } from "../types/api.types";
 import { randomUUID } from "crypto";
 import { decodeJwt } from "jose";
 import { APIError } from "encore.dev/api";
-import { usersTestClient } from "~encore/clients";
+import * as usersTestClient from "~encore/internal/clients/users/endpoints_testing";
 
 // Helper to decode JWT and create auth opts for test client
 function createAuthOpts(token: string) {
@@ -117,7 +117,7 @@ describe("E2E: Critical User Journeys", () => {
       // Should be able to access profile normally
       const token = await generateTestJWT(userId, userEmail);
       const profileResponse = await usersTestClient.me(undefined, createAuthOpts(token));
-      expect(profileResponse.status).toBe(200);
+      expect(profileResponse.user).toBeDefined();
     });
   });
 
