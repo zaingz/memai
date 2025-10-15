@@ -17,22 +17,30 @@ const {
   mockYouTubeDownloadAndUpload,
   mockPodcastDownloadAndUpload,
   mockExtractYouTubeVideoId,
+  mockBuildYouTubeUrl,
+  mockGeminiTranscribeYouTubeVideo,
   mockFindByBookmarkId,
   mockCreatePending,
   mockMarkAsProcessing,
   mockMarkAsFailed,
+  mockUpdateGeminiTranscriptionData,
   mockPublish,
+  mockAudioTranscribedPublish,
   mockRemove,
   mockLog,
 } = vi.hoisted(() => ({
   mockYouTubeDownloadAndUpload: vi.fn(),
   mockPodcastDownloadAndUpload: vi.fn(),
   mockExtractYouTubeVideoId: vi.fn(),
+  mockBuildYouTubeUrl: vi.fn(),
+  mockGeminiTranscribeYouTubeVideo: vi.fn(),
   mockFindByBookmarkId: vi.fn(),
   mockCreatePending: vi.fn(),
   mockMarkAsProcessing: vi.fn(),
   mockMarkAsFailed: vi.fn(),
+  mockUpdateGeminiTranscriptionData: vi.fn(),
   mockPublish: vi.fn(),
+  mockAudioTranscribedPublish: vi.fn(),
   mockRemove: vi.fn(),
   mockLog: {
     info: vi.fn(),
@@ -74,16 +82,30 @@ vi.mock("../../repositories/transcription.repository", () => ({
     createPending = mockCreatePending;
     markAsProcessing = mockMarkAsProcessing;
     markAsFailed = mockMarkAsFailed;
+    updateGeminiTranscriptionData = mockUpdateGeminiTranscriptionData;
+  },
+}));
+
+vi.mock("../../services/gemini.service", () => ({
+  GeminiService: class MockGeminiService {
+    transcribeYouTubeVideo = mockGeminiTranscribeYouTubeVideo;
   },
 }));
 
 vi.mock("../../utils/youtube-url.util", () => ({
   extractYouTubeVideoId: mockExtractYouTubeVideoId,
+  buildYouTubeUrl: mockBuildYouTubeUrl,
 }));
 
 vi.mock("../../events/audio-downloaded.events", () => ({
   audioDownloadedTopic: {
     publish: mockPublish,
+  },
+}));
+
+vi.mock("../../events/audio-transcribed.events", () => ({
+  audioTranscribedTopic: {
+    publish: mockAudioTranscribedPublish,
   },
 }));
 
@@ -104,6 +126,34 @@ describe("Audio Download Processor", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
+
+  /**
+   * Helper: Mock Gemini failure for TIER 2 fallback tests
+   * Most tests should use this to test the yt-dlp + Deepgram fallback path
+   */
+  const mockGeminiFailure = (videoId: string) => {
+    mockBuildYouTubeUrl.mockReturnValue(`https://www.youtube.com/watch?v=${videoId}`);
+    mockGeminiTranscribeYouTubeVideo.mockResolvedValue({
+      transcript: "",
+      confidence: 0,
+      processingTime: 1000,
+      method: "gemini" as const,
+      error: "Private video",
+    });
+  };
+
+  /**
+   * Helper: Mock Gemini success for TIER 1 tests
+   */
+  const mockGeminiSuccess = (videoId: string, transcript: string) => {
+    mockBuildYouTubeUrl.mockReturnValue(`https://www.youtube.com/watch?v=${videoId}`);
+    mockGeminiTranscribeYouTubeVideo.mockResolvedValue({
+      transcript,
+      confidence: 0.95,
+      processingTime: 30000,
+      method: "gemini" as const,
+    });
+  };
 
   describe("Source Filtering", () => {
     const nonAudioSources = [
@@ -132,7 +182,7 @@ describe("Audio Download Processor", () => {
       });
     });
 
-    it("should process YouTube source", async () => {
+    it("should process YouTube source (Gemini fallback to TIER 2)", async () => {
       const event = {
         bookmarkId: 2,
         url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -144,6 +194,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("dQw4w9WgXcQ");
+      mockGeminiFailure("dQw4w9WgXcQ");
       mockYouTubeDownloadAndUpload.mockResolvedValue("audio-2-dQw4w9WgXcQ.mp3");
       mockPublish.mockResolvedValue("msg-123");
 
@@ -223,6 +274,7 @@ describe("Audio Download Processor", () => {
       });
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("abc123");
+      mockGeminiFailure("abc123");
       mockYouTubeDownloadAndUpload.mockResolvedValue("audio-5-abc123.mp3");
       mockPublish.mockResolvedValue("msg-789");
 
@@ -245,6 +297,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("xyz");
+      mockGeminiFailure("xyz");
       mockYouTubeDownloadAndUpload.mockResolvedValue("audio-6-xyz.mp3");
       mockPublish.mockResolvedValue("msg-abc");
 
@@ -253,6 +306,82 @@ describe("Audio Download Processor", () => {
       expect(mockCreatePending).toHaveBeenCalledWith(6);
       expect(mockMarkAsProcessing).toHaveBeenCalledWith(6);
       expect(mockYouTubeDownloadAndUpload).toHaveBeenCalled();
+    });
+  });
+
+  describe("Gemini Tier-Based Transcription", () => {
+    it("should use Gemini TIER 1 successfully and skip audio download", async () => {
+      const event = {
+        bookmarkId: 50,
+        url: "https://www.youtube.com/watch?v=gemini-success",
+        source: BookmarkSource.YOUTUBE,
+        title: "Gemini Test Video",
+      };
+
+      mockFindByBookmarkId.mockResolvedValue(null);
+      mockCreatePending.mockResolvedValue(undefined);
+      mockMarkAsProcessing.mockResolvedValue(undefined);
+      mockExtractYouTubeVideoId.mockReturnValue("gemini-success");
+      mockGeminiSuccess("gemini-success", "This is the Gemini transcript.");
+      mockUpdateGeminiTranscriptionData.mockResolvedValue(undefined);
+      mockAudioTranscribedPublish.mockResolvedValue("msg-gemini");
+
+      await handleAudioDownload(event);
+
+      // Verify Gemini was called
+      expect(mockGeminiTranscribeYouTubeVideo).toHaveBeenCalled();
+
+      // Verify transcript was stored
+      expect(mockUpdateGeminiTranscriptionData).toHaveBeenCalledWith(50, {
+        transcript: "This is the Gemini transcript.",
+        confidence: 0.95,
+      });
+
+      // Verify audio-transcribed event was published (skipping download)
+      expect(mockAudioTranscribedPublish).toHaveBeenCalledWith({
+        bookmarkId: 50,
+        transcript: "This is the Gemini transcript.",
+        source: BookmarkSource.YOUTUBE,
+      });
+
+      // Verify audio download was NOT called (TIER 1 success)
+      expect(mockYouTubeDownloadAndUpload).not.toHaveBeenCalled();
+      expect(mockPublish).not.toHaveBeenCalled(); // audio-downloaded topic
+    });
+
+    it("should fall back to TIER 2 when Gemini fails", async () => {
+      const event = {
+        bookmarkId: 51,
+        url: "https://www.youtube.com/watch?v=gemini-fail",
+        source: BookmarkSource.YOUTUBE,
+        title: "Private Video",
+      };
+
+      mockFindByBookmarkId.mockResolvedValue(null);
+      mockCreatePending.mockResolvedValue(undefined);
+      mockMarkAsProcessing.mockResolvedValue(undefined);
+      mockExtractYouTubeVideoId.mockReturnValue("gemini-fail");
+      mockGeminiFailure("gemini-fail");
+      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-51-gemini-fail.mp3");
+      mockPublish.mockResolvedValue("msg-fallback");
+
+      await handleAudioDownload(event);
+
+      // Verify Gemini was attempted
+      expect(mockGeminiTranscribeYouTubeVideo).toHaveBeenCalled();
+
+      // Verify fallback to yt-dlp + Deepgram (TIER 2)
+      expect(mockYouTubeDownloadAndUpload).toHaveBeenCalledWith("gemini-fail", 51);
+      expect(mockPublish).toHaveBeenCalledWith({
+        bookmarkId: 51,
+        audioBucketKey: "audio-51-gemini-fail.mp3",
+        source: BookmarkSource.YOUTUBE,
+        metadata: { videoId: "gemini-fail" },
+      });
+
+      // Verify Gemini data was NOT stored
+      expect(mockUpdateGeminiTranscriptionData).not.toHaveBeenCalled();
+      expect(mockAudioTranscribedPublish).not.toHaveBeenCalled();
     });
   });
 
@@ -269,6 +398,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("videoID123");
+      mockGeminiFailure("videoID123");
       mockYouTubeDownloadAndUpload.mockResolvedValue("audio-7-videoID123.mp3");
       mockPublish.mockResolvedValue("msg-def");
 
