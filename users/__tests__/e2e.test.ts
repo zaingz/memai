@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { db } from "../db";
 import { UserRepository } from "../repositories/user.repository";
 import { generateTestJWT } from "../../test/utils/jwt-generator.util";
-import { createUserCreatedWebhookPayload } from "../../test/utils/test-data.factory";
+import { createCustomAccessTokenHookPayload } from "../../test/utils/test-data.factory";
 import { clearUsersTable, userExists } from "../../test/utils/database.util";
 import { userCreated } from "../webhooks";
 import { MeResponse, UpdateProfileResponse } from "../types/api.types";
@@ -53,7 +53,7 @@ describe("E2E: Critical User Journeys", () => {
       const userName = "New User";
 
       // STEP 1: Simulate Supabase user creation webhook
-      const webhookPayload = createUserCreatedWebhookPayload({
+      const webhookPayload = createCustomAccessTokenHookPayload({
         id: userId,
         email: userEmail,
         user_metadata: { name: userName },
@@ -94,7 +94,7 @@ describe("E2E: Critical User Journeys", () => {
       const userId = randomUUID();
       const userEmail = "idempotent@test.com";
 
-      const payload = createUserCreatedWebhookPayload({
+      const payload = createCustomAccessTokenHookPayload({
         id: userId,
         email: userEmail,
         user_metadata: { name: "Idempotent User" },
@@ -136,7 +136,7 @@ describe("E2E: Critical User Journeys", () => {
       };
 
       for (const user of [user1, user2]) {
-        const payload = createUserCreatedWebhookPayload({
+        const payload = createCustomAccessTokenHookPayload({
           id: user.id,
           email: user.email,
           user_metadata: { name: user.name },

@@ -141,8 +141,15 @@ export function createCustomAccessTokenHookPayload(
   } = {}
 ): CustomAccessTokenHookPayload {
   const userId = overrides.id || randomUUID();
-  const email = overrides.email || `test-${userId.slice(0, 8)}@example.com`;
-  const name = overrides.user_metadata?.name || "Test User";
+  const email = overrides.email !== undefined ? overrides.email : `test-${userId.slice(0, 8)}@example.com`;
+
+  // Handle user_metadata properly - if explicitly passed, use it as-is
+  let userMetadata: { name?: string } | undefined;
+  if (overrides.user_metadata !== undefined) {
+    userMetadata = overrides.user_metadata;
+  } else {
+    userMetadata = { name: "Test User" };
+  }
 
   return {
     user_id: userId,
@@ -151,9 +158,7 @@ export function createCustomAccessTokenHookPayload(
       email: email,
       email_confirmed_at: new Date().toISOString(),
       phone: "",
-      user_metadata: {
-        name: name,
-      },
+      user_metadata: userMetadata,
       app_metadata: {
         provider: "email",
         providers: ["email"],

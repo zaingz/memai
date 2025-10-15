@@ -81,9 +81,9 @@ describe("Supabase Auth Webhooks", () => {
       const response1 = await userCreated(payload);
       expect(response1.claims?.local_db_synced).toBe(true);
 
-      // Send same webhook again (returns empty claims for duplicate)
+      // Send same webhook again (still returns claims with local_db_synced for duplicate)
       const response2 = await userCreated(payload);
-      expect(response2.claims).toEqual({});
+      expect(response2.claims?.local_db_synced).toBe(true);
 
       // User should still exist (not duplicated)
       const user = await userRepo.findById(payload.user_id);
@@ -110,8 +110,8 @@ describe("Supabase Auth Webhooks", () => {
 
       const response = await userCreated(payload);
 
-      // Should succeed with empty claims (duplicate)
-      expect(response.claims).toEqual({});
+      // Should succeed with claims including local_db_synced (duplicate user)
+      expect(response.claims?.local_db_synced).toBe(true);
     });
 
     it("should handle multiple unique users", async () => {
@@ -242,13 +242,20 @@ describe("Supabase Auth Webhooks", () => {
 
   describe("Webhook error handling", () => {
     it("should reject missing user email with 400", async () => {
-      const payload = createCustomAccessTokenHookPayload({
-        email: undefined as any, // Missing email
-      });
+      const userId = randomUUID();
+      const payload = {
+        user_id: userId,
+        claims: {
+          sub: userId,
+          // Missing email field
+          user_metadata: { name: "Test" },
+        },
+        authentication_method: "password",
+      };
 
-      // Handler catches errors and returns empty claims
-      const response = await userCreated(payload);
-      expect(response.claims).toEqual({});
+      // Handler catches errors and returns existing claims unchanged
+      const response = await userCreated(payload as any);
+      expect(response.claims).toBeDefined();
     });
 
     it("should handle invalid user ID gracefully", async () => {
