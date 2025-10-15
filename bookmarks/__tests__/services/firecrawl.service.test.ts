@@ -26,7 +26,9 @@ describe("FirecrawlService", () => {
     service = new FirecrawlService(mockApiKey);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Clear all pending timers to prevent unhandled rejections
+    await vi.runOnlyPendingTimersAsync();
     vi.restoreAllMocks();
   });
 
@@ -411,12 +413,13 @@ describe("FirecrawlService", () => {
       }));
 
       const scrapePromise = service.scrape(testUrl).catch((e) => e);
+
+      // Advance timers to trigger all retries
       await vi.advanceTimersByTimeAsync(30000);
 
-      // Ensure all pending async operations complete
-      await vi.runOnlyPendingTimersAsync();
-
+      // Await the result
       const result = await scrapePromise;
+
       expect(result).toBeInstanceOf(Error);
       expect(result.message).toMatch(/Rate limited. Retry after: unknown/);
     });
