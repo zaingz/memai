@@ -30,6 +30,16 @@ describe("FirecrawlService", () => {
     vi.restoreAllMocks();
   });
 
+  // Helper to create complete mock fetch response
+  const createMockFetchResponse = (overrides: any = {}) => ({
+    ok: true,
+    status: 200,
+    headers: new Map(),
+    text: async () => "",
+    json: async () => createMockSuccessResponse(),
+    ...overrides,
+  });
+
   const createMockSuccessResponse = (): FirecrawlScrapeResponse => ({
     success: true,
     data: {
@@ -50,13 +60,9 @@ describe("FirecrawlService", () => {
   describe("scrape", () => {
     it("should successfully scrape URL on first attempt", async () => {
       const mockResponse = createMockSuccessResponse();
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => mockResponse,
-        headers: new Map(),
-      });
+      }));
 
       const result = await service.scrape(testUrl);
 
@@ -77,12 +83,9 @@ describe("FirecrawlService", () => {
 
     it("should include correct request body parameters", async () => {
       const mockResponse = createMockSuccessResponse();
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => mockResponse,
-      });
+      }));
 
       await service.scrape(testUrl);
 
@@ -105,11 +108,9 @@ describe("FirecrawlService", () => {
       mockFetch.mockRejectedValueOnce(abortError);
 
       // Second attempt: success
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => mockResponse,
-      });
+      }));
 
       // Start the scrape (don't await yet)
       const scrapePromise = service.scrape(testUrl);
@@ -127,19 +128,17 @@ describe("FirecrawlService", () => {
       const mockResponse = createMockSuccessResponse();
 
       // First attempt: rate limited
-      mockFetch.mockResolvedValueOnce({
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         ok: false,
         status: 429,
         text: async () => "Rate limit exceeded",
         headers: new Map([["Retry-After", "60"]]),
-      });
+      }));
 
       // Second attempt: success
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => mockResponse,
-      });
+      }));
 
       const scrapePromise = service.scrape(testUrl);
 
@@ -153,76 +152,73 @@ describe("FirecrawlService", () => {
     });
 
     it("should throw error on non-200 status after all retries", async () => {
-      mockFetch.mockResolvedValue({
+      mockFetch.mockResolvedValue(createMockFetchResponse({
         ok: false,
         status: 500,
         text: async () => "Internal server error",
-      });
+      }));
 
-      const scrapePromise = service.scrape(testUrl);
+      const scrapePromise = service.scrape(testUrl).catch((e) => e);
 
       // Fast-forward through all retry attempts
       await vi.advanceTimersByTimeAsync(30000);
 
-      await expect(scrapePromise).rejects.toThrow(
-        /FireCrawl API error \(500\): Internal server error/
-      );
-
+      const result = await scrapePromise;
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toMatch(/FireCrawl API error \(500\): Internal server error/);
       expect(mockFetch).toHaveBeenCalledTimes(3); // Initial + 2 retries
     });
 
     it("should handle unsuccessful response from FireCrawl", async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValue(createMockFetchResponse({
         json: async () => ({
           success: false,
           error: "Content extraction failed",
         }),
-      });
+      }));
 
-      const scrapePromise = service.scrape(testUrl);
+      const scrapePromise = service.scrape(testUrl).catch((e) => e);
 
       // Fast-forward through all retry attempts
       await vi.advanceTimersByTimeAsync(30000);
 
-      await expect(scrapePromise).rejects.toThrow(
-        "FireCrawl returned unsuccessful response"
-      );
+      const result = await scrapePromise;
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toContain("FireCrawl returned unsuccessful response");
     });
 
     it("should throw error after max retries exhausted", async () => {
       mockFetch.mockRejectedValue(new Error("Network error"));
 
-      const scrapePromise = service.scrape(testUrl);
+      const scrapePromise = service.scrape(testUrl).catch((e) => e);
 
       // Fast-forward through all retry attempts
       await vi.advanceTimersByTimeAsync(30000);
 
-      await expect(scrapePromise).rejects.toThrow("Network error");
+      const result = await scrapePromise;
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toContain("Network error");
       expect(mockFetch).toHaveBeenCalledTimes(3); // Initial + 2 retries
     });
 
     it("should handle JSON parsing errors", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      // Mock for all retry attempts
+      mockFetch.mockResolvedValue(createMockFetchResponse({
         json: async () => {
           throw new Error("Invalid JSON");
         },
-      });
+      }));
 
-      const scrapePromise = service.scrape(testUrl);
-
+      const scrapePromise = service.scrape(testUrl).catch((e) => e);
       await vi.advanceTimersByTimeAsync(30000);
 
-      await expect(scrapePromise).rejects.toThrow(/Failed to scrape URL.*Invalid JSON/);
+      const result = await scrapePromise;
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toMatch(/Failed to scrape URL.*Invalid JSON/);
     });
 
     it("should handle missing markdown in response", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => ({
           success: true,
           data: {
@@ -231,7 +227,7 @@ describe("FirecrawlService", () => {
             metadata: { title: "Test" },
           },
         }),
-      });
+      }));
 
       const result = await service.scrape(testUrl);
 
@@ -242,11 +238,9 @@ describe("FirecrawlService", () => {
     it("should include metadata in successful response", async () => {
       const mockResponse = createMockSuccessResponse();
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => mockResponse,
-      });
+      }));
 
       const result = await service.scrape(testUrl);
 
@@ -260,11 +254,9 @@ describe("FirecrawlService", () => {
       const longUrl = "https://example.com/" + "a".repeat(1000);
       const mockResponse = createMockSuccessResponse();
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => mockResponse,
-      });
+      }));
 
       const result = await service.scrape(longUrl);
 
@@ -281,11 +273,9 @@ describe("FirecrawlService", () => {
       const specialUrl = "https://example.com/article?id=123&category=tech%20news";
       const mockResponse = createMockSuccessResponse();
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => mockResponse,
-      });
+      }));
 
       const result = await service.scrape(specialUrl);
 
@@ -298,7 +288,7 @@ describe("FirecrawlService", () => {
       // This tests the private method indirectly through retry behavior
       mockFetch.mockRejectedValue(new Error("Network error"));
 
-      const scrapePromise = service.scrape(testUrl);
+      const scrapePromise = service.scrape(testUrl).catch((e) => e);
 
       // First retry should be around 1000ms * 2^0 = 1000ms
       await vi.advanceTimersByTimeAsync(1500);
@@ -308,18 +298,20 @@ describe("FirecrawlService", () => {
       await vi.advanceTimersByTimeAsync(2500);
       expect(mockFetch).toHaveBeenCalledTimes(3);
 
-      await expect(scrapePromise).rejects.toThrow();
+      const result = await scrapePromise;
+      expect(result).toBeInstanceOf(Error);
     });
 
     it("should respect max retry attempts configuration", async () => {
       mockFetch.mockRejectedValue(new Error("Network error"));
 
-      const scrapePromise = service.scrape(testUrl);
+      const scrapePromise = service.scrape(testUrl).catch((e) => e);
 
       // Fast-forward through all retries
       await vi.advanceTimersByTimeAsync(30000);
 
-      await expect(scrapePromise).rejects.toThrow();
+      const result = await scrapePromise;
+      expect(result).toBeInstanceOf(Error);
 
       // Should be called 3 times total (1 initial + 2 retries, per config)
       expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -333,11 +325,9 @@ describe("FirecrawlService", () => {
       mockFetch.mockRejectedValueOnce(new Error("Network error 2"));
 
       // Third attempt succeeds
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => mockResponse,
-      });
+      }));
 
       const scrapePromise = service.scrape(testUrl);
 
@@ -374,11 +364,9 @@ describe("FirecrawlService", () => {
     it("should not timeout if response arrives quickly", async () => {
       const mockResponse = createMockSuccessResponse();
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => mockResponse,
-      });
+      }));
 
       const result = await service.scrape(testUrl);
 
@@ -390,53 +378,50 @@ describe("FirecrawlService", () => {
     it("should include URL in error message", async () => {
       mockFetch.mockRejectedValue(new Error("Network error"));
 
-      const scrapePromise = service.scrape(testUrl);
-
+      const scrapePromise = service.scrape(testUrl).catch((e) => e);
       await vi.advanceTimersByTimeAsync(30000);
 
-      await expect(scrapePromise).rejects.toThrow(
-        `Failed to scrape URL ${testUrl}`
-      );
+      const result = await scrapePromise;
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toContain(`Failed to scrape URL ${testUrl}`);
     });
 
     it("should include rate limit info in error", async () => {
-      mockFetch.mockResolvedValue({
+      mockFetch.mockResolvedValue(createMockFetchResponse({
         ok: false,
         status: 429,
         text: async () => "Rate limit exceeded",
         headers: new Map([["Retry-After", "60"]]),
-      });
+      }));
 
-      const scrapePromise = service.scrape(testUrl);
-
+      const scrapePromise = service.scrape(testUrl).catch((e) => e);
       await vi.advanceTimersByTimeAsync(30000);
 
-      await expect(scrapePromise).rejects.toThrow(/Rate limited. Retry after: 60/);
+      const result = await scrapePromise;
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toMatch(/Rate limited. Retry after: 60/);
     });
 
     it("should handle rate limit without Retry-After header", async () => {
-      mockFetch.mockResolvedValue({
+      mockFetch.mockResolvedValue(createMockFetchResponse({
         ok: false,
         status: 429,
         text: async () => "Rate limit exceeded",
         headers: new Map(),
-      });
+      }));
 
-      const scrapePromise = service.scrape(testUrl);
-
+      const scrapePromise = service.scrape(testUrl).catch((e) => e);
       await vi.advanceTimersByTimeAsync(30000);
 
-      await expect(scrapePromise).rejects.toThrow(
-        /Rate limited. Retry after: unknown/
-      );
+      const result = await scrapePromise;
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toMatch(/Rate limited. Retry after: unknown/);
     });
   });
 
   describe("edge cases", () => {
     it("should handle empty markdown content", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => ({
           success: true,
           data: {
@@ -450,7 +435,7 @@ describe("FirecrawlService", () => {
             },
           },
         }),
-      });
+      }));
 
       const result = await service.scrape(testUrl);
 
@@ -459,9 +444,7 @@ describe("FirecrawlService", () => {
     });
 
     it("should handle missing optional metadata fields", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => ({
           success: true,
           data: {
@@ -476,7 +459,7 @@ describe("FirecrawlService", () => {
             },
           },
         }),
-      });
+      }));
 
       const result = await service.scrape(testUrl);
 
@@ -488,9 +471,7 @@ describe("FirecrawlService", () => {
     it("should handle very large markdown content", async () => {
       const largeMarkdown = "# Title\n\n" + "Content paragraph.\n".repeat(10000);
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => ({
           success: true,
           data: {
@@ -504,7 +485,7 @@ describe("FirecrawlService", () => {
             },
           },
         }),
-      });
+      }));
 
       const result = await service.scrape(testUrl);
 
@@ -512,9 +493,7 @@ describe("FirecrawlService", () => {
     });
 
     it("should handle non-English content", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
         json: async () => ({
           success: true,
           data: {
@@ -528,7 +507,7 @@ describe("FirecrawlService", () => {
             },
           },
         }),
-      });
+      }));
 
       const result = await service.scrape(testUrl);
 
