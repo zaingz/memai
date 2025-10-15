@@ -23,6 +23,7 @@ describe("FirecrawlService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetch.mockReset();
     service = new FirecrawlService(mockApiKey);
   });
 
