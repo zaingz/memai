@@ -14,9 +14,26 @@ import { UserRepository } from "../repositories/user.repository";
 import { generateTestJWT } from "../../test/utils/jwt-generator.util";
 import { createUserCreatedWebhookPayload } from "../../test/utils/test-data.factory";
 import { clearUsersTable, userExists } from "../../test/utils/database.util";
-import { userApi, webhookApi } from "../../test/utils/api-client.util";
+import { userCreated } from "../webhooks";
 import { MeResponse, UpdateProfileResponse } from "../types/api.types";
 import { randomUUID } from "crypto";
+import { decodeJwt } from "jose";
+import { APIError } from "encore.dev/api";
+import { usersTestClient } from "~encore/clients";
+
+// Helper to decode JWT and create auth opts for test client
+function createAuthOpts(token: string) {
+  if (!token || token.trim() === "") {
+    throw APIError.unauthenticated("No authentication token provided");
+  }
+  const payload = decodeJwt(token);
+  return {
+    authData: {
+      userID: payload.sub || "",
+      email: (payload.email as string) || "",
+    },
+  };
+}
 
 describe("E2E: Critical User Journeys", () => {
   const userRepo = new UserRepository(db);
@@ -42,8 +59,8 @@ describe("E2E: Critical User Journeys", () => {
         user_metadata: { name: userName },
       });
 
-      const webhookResponse = await webhookApi.userCreated(webhookPayload);
-      expect(webhookResponse.status).toBe(200);
+      const webhookResponse = await userCreated(webhookPayload);
+      expect(webhookResponse.claims).toBeDefined();
 
       // STEP 2: Verify user exists in local database
       const exists = await userExists(db, userId);
@@ -51,29 +68,24 @@ describe("E2E: Critical User Journeys", () => {
 
       // STEP 3: User fetches their profile (simulates login → API call)
       const token = await generateTestJWT(userId, userEmail);
-      const profileResponse = await userApi.getMe(token);
-      expect(profileResponse.status).toBe(200);
+      const profileResponse = await usersTestClient.me(undefined, createAuthOpts(token));
 
-      const { user } = profileResponse.data as MeResponse;
-      expect(user.id).toBe(userId);
-      expect(user.email).toBe(userEmail);
-      expect(user.name).toBe(userName);
+      expect(profileResponse.user.id).toBe(userId);
+      expect(profileResponse.user.email).toBe(userEmail);
+      expect(profileResponse.user.name).toBe(userName);
 
       // STEP 4: User updates their profile
       const updatedName = "Updated Name";
-      const updateResponse = await userApi.updateMe(
+      const updateResponse = await usersTestClient.updateProfile(
         { name: updatedName },
-        token
+        createAuthOpts(token)
       );
-      expect(updateResponse.status).toBe(200);
 
-      const { user: updatedUser } = updateResponse.data as UpdateProfileResponse;
-      expect(updatedUser.name).toBe(updatedName);
+      expect(updateResponse.user.name).toBe(updatedName);
 
       // STEP 5: Verify update persisted
-      const verifyResponse = await userApi.getMe(token);
-      const { user: verifiedUser } = verifyResponse.data as MeResponse;
-      expect(verifiedUser.name).toBe(updatedName);
+      const verifyResponse = await usersTestClient.me(undefined, createAuthOpts(token));
+      expect(verifyResponse.user.name).toBe(updatedName);
     });
   });
 
@@ -89,14 +101,14 @@ describe("E2E: Critical User Journeys", () => {
       });
 
       // Send webhook 3 times (simulating Supabase retries)
-      const response1 = await webhookApi.userCreated(payload);
-      const response2 = await webhookApi.userCreated(payload);
-      const response3 = await webhookApi.userCreated(payload);
+      const response1 = await userCreated(payload);
+      const response2 = await userCreated(payload);
+      const response3 = await userCreated(payload);
 
       // All should succeed
-      expect(response1.status).toBe(200);
-      expect(response2.status).toBe(200);
-      expect(response3.status).toBe(200);
+      expect(response1.claims).toBeDefined();
+      expect(response2.claims).toBeDefined();
+      expect(response3.claims).toBeDefined();
 
       // User should exist only once
       const user = await userRepo.findById(userId);
@@ -104,7 +116,7 @@ describe("E2E: Critical User Journeys", () => {
 
       // Should be able to access profile normally
       const token = await generateTestJWT(userId, userEmail);
-      const profileResponse = await userApi.getMe(token);
+      const profileResponse = await usersTestClient.me(undefined, createAuthOpts(token));
       expect(profileResponse.status).toBe(200);
     });
   });
@@ -129,18 +141,18 @@ describe("E2E: Critical User Journeys", () => {
           email: user.email,
           user_metadata: { name: user.name },
         });
-        await webhookApi.userCreated(payload);
+        await userCreated(payload);
       }
 
       // User 1 updates their profile
       const token1 = await generateTestJWT(user1.id, user1.email);
-      await userApi.updateMe({ name: "User 1 Updated" }, token1);
+      await usersTestClient.updateProfile({ name: "User 1 Updated" }, createAuthOpts(token1));
 
       // User 2 fetches their profile
       const token2 = await generateTestJWT(user2.id, user2.email);
-      const response2 = await userApi.getMe(token2);
+      const response2 = await usersTestClient.me(undefined, createAuthOpts(token2));
 
-      const { user: userData2 } = response2.data as MeResponse;
+      const userData2 = response2.user;
 
       // User 2's data should be unchanged
       expect(userData2.id).toBe(user2.id);
@@ -151,14 +163,20 @@ describe("E2E: Critical User Journeys", () => {
   describe("Authentication Failures", () => {
     it("should reject unauthenticated requests", async () => {
       // Try to fetch profile without token
-      const profileResponse = await userApi.getMe("");
-      expect(profileResponse.status).toBe(401);
-      expect(profileResponse.error?.code).toBe("unauthenticated");
+      try {
+        await usersTestClient.me(undefined, undefined);
+        throw new Error("Should have thrown unauthenticated error");
+      } catch (error: any) {
+        expect(error.code).toBe("unauthenticated");
+      }
 
       // Try to update profile without token
-      const updateResponse = await userApi.updateMe({ name: "Hacker" }, "");
-      expect(updateResponse.status).toBe(401);
-      expect(updateResponse.error?.code).toBe("unauthenticated");
+      try {
+        await usersTestClient.updateProfile({ name: "Hacker" }, undefined);
+        throw new Error("Should have thrown unauthenticated error");
+      } catch (error: any) {
+        expect(error.code).toBe("unauthenticated");
+      }
     });
 
     it("should reject access for non-existent user", async () => {
@@ -169,9 +187,12 @@ describe("E2E: Critical User Journeys", () => {
       );
 
       // Try to fetch profile
-      const response = await userApi.getMe(token);
-      expect(response.status).toBe(404);
-      expect(response.error?.code).toBe("not_found");
+      try {
+        await usersTestClient.me(undefined, createAuthOpts(token));
+        throw new Error("Should have thrown not_found error");
+      } catch (error: any) {
+        expect(error.code).toBe("not_found");
+      }
     });
   });
 });

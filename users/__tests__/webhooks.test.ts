@@ -13,7 +13,7 @@ import {
   createSupabaseAuthUser,
 } from "../../test/utils/test-data.factory";
 import { clearUsersTable, userExists } from "../../test/utils/database.util";
-import { webhookApi } from "../../test/utils/api-client.util";
+import { userCreated } from "../webhooks";
 import { AuthWebhookResponse } from "../types/webhook.types";
 import { randomUUID } from "crypto";
 
@@ -32,7 +32,7 @@ describe("Supabase Auth Webhooks", () => {
     it("should create user in local database from webhook", async () => {
       const payload = createUserCreatedWebhookPayload();
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       // Webhook should succeed
       expect(response.status).toBe(200);
@@ -54,7 +54,7 @@ describe("Supabase Auth Webhooks", () => {
     it("should return custom JWT claims", async () => {
       const payload = createUserCreatedWebhookPayload();
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       expect(response.status).toBe(200);
       const data = response.data as AuthWebhookResponse;
@@ -69,7 +69,7 @@ describe("Supabase Auth Webhooks", () => {
         user_metadata: {}, // No name
       });
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       expect(response.status).toBe(200);
 
@@ -83,11 +83,11 @@ describe("Supabase Auth Webhooks", () => {
       const payload = createUserCreatedWebhookPayload();
 
       // Send webhook first time
-      const response1 = await webhookApi.userCreated(payload);
+      const response1 = await userCreated(payload);
       expect(response1.status).toBe(200);
 
       // Send same webhook again
-      const response2 = await webhookApi.userCreated(payload);
+      const response2 = await userCreated(payload);
       expect(response2.status).toBe(200);
 
       // User should still exist (not duplicated)
@@ -113,7 +113,7 @@ describe("Supabase Auth Webhooks", () => {
         email: email,
       });
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       // Should succeed (idempotent)
       expect(response.status).toBe(200);
@@ -129,7 +129,7 @@ describe("Supabase Auth Webhooks", () => {
 
       // Send webhooks for all users
       for (const payload of users) {
-        const response = await webhookApi.userCreated(payload);
+        const response = await userCreated(payload);
         expect(response.status).toBe(200);
       }
 
@@ -148,7 +148,7 @@ describe("Supabase Auth Webhooks", () => {
         },
       });
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       expect(response.status).toBe(200);
 
@@ -168,7 +168,7 @@ describe("Supabase Auth Webhooks", () => {
         },
       };
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       // Encore validates types at API boundary - malformed payload returns 400
       expect(response.status).toBe(400);
@@ -177,7 +177,7 @@ describe("Supabase Auth Webhooks", () => {
     it("should log webhook events", async () => {
       const payload = createUserCreatedWebhookPayload();
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       expect(response.status).toBe(200);
 
@@ -195,7 +195,7 @@ describe("Supabase Auth Webhooks", () => {
         },
       };
 
-      const response = await webhookApi.userCreated(invalidPayload);
+      const response = await userCreated(invalidPayload);
 
       // Encore validates types at API boundary - invalid payload returns 400
       expect(response.status).toBe(400);
@@ -210,7 +210,7 @@ describe("Supabase Auth Webhooks", () => {
 
       // Send all webhooks concurrently
       const responses = await Promise.all(
-        payloads.map((payload) => webhookApi.userCreated(payload))
+        payloads.map((payload) => userCreated(payload))
       );
 
       // All should succeed
@@ -232,7 +232,7 @@ describe("Supabase Auth Webhooks", () => {
       // (In production, you'd verify webhook signature instead)
       const payload = createUserCreatedWebhookPayload();
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       expect(response.status).toBe(200);
     });
@@ -240,7 +240,7 @@ describe("Supabase Auth Webhooks", () => {
     it("should validate webhook event type", async () => {
       const payload = createUserCreatedWebhookPayload();
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       expect(response.status).toBe(200);
       expect(payload.event).toBe("user.created");
@@ -253,7 +253,7 @@ describe("Supabase Auth Webhooks", () => {
         email: undefined as any, // Missing email
       });
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       // Encore validates types at API boundary - missing required field returns 400
       expect(response.status).toBe(400);
@@ -268,7 +268,7 @@ describe("Supabase Auth Webhooks", () => {
         },
       };
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
 
       // Should handle error gracefully
       expect(response.status).toBe(200);
@@ -290,7 +290,7 @@ describe("Supabase Auth Webhooks", () => {
         user_metadata: { name: "New User" },
       });
 
-      const response = await webhookApi.userCreated(payload);
+      const response = await userCreated(payload);
       expect(response.status).toBe(200);
 
       // 2. User should now exist in local database
@@ -314,7 +314,7 @@ describe("Supabase Auth Webhooks", () => {
 
       // Send webhooks sequentially (rapid signups)
       for (const payload of payloads) {
-        const response = await webhookApi.userCreated(payload);
+        const response = await userCreated(payload);
         expect(response.status).toBe(200);
       }
 
