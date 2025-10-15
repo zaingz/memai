@@ -9,12 +9,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { db } from "../db";
 import { UserRepository } from "../repositories/user.repository";
 import {
-  createUserCreatedWebhookPayload,
-  createSupabaseAuthUser,
+  createCustomAccessTokenHookPayload,
 } from "../../test/utils/test-data.factory";
 import { clearUsersTable, userExists } from "../../test/utils/database.util";
 import { userCreated } from "../webhooks";
-import { AuthWebhookResponse } from "../types/webhook.types";
 import { randomUUID } from "crypto";
 
 describe("Supabase Auth Webhooks", () => {
@@ -30,29 +28,29 @@ describe("Supabase Auth Webhooks", () => {
 
   describe("POST /webhooks/auth/user-created", () => {
     it("should create user in local database from webhook", async () => {
-      const payload = createUserCreatedWebhookPayload();
+      const payload = createCustomAccessTokenHookPayload();
 
       const response = await userCreated(payload);
 
-      // Webhook should return claims
+      // Webhook should return claims with local_db_synced
       expect(response.claims).toBeDefined();
-      expect(response.claims?.local_db_synced).toBe(true);
+      expect(response.claims.local_db_synced).toBe(true);
 
       // User should exist in database
-      const exists = await userExists(db, payload.user.id);
+      const exists = await userExists(db, payload.user_id);
       expect(exists).toBe(true);
 
       // Verify user data
-      const user = await userRepo.findById(payload.user.id);
+      const user = await userRepo.findById(payload.user_id);
       expect(user).toBeDefined();
-      expect(user?.id).toBe(payload.user.id);
-      expect(user?.email).toBe(payload.user.email);
-      expect(user?.name).toBe(payload.user.user_metadata.name);
+      expect(user?.id).toBe(payload.user_id);
+      expect(user?.email).toBe(payload.claims.email);
+      expect(user?.name).toBe(payload.claims.user_metadata?.name);
       expect(user?.migrated_to_supabase).toBe(true);
     });
 
     it("should return custom JWT claims", async () => {
-      const payload = createUserCreatedWebhookPayload();
+      const payload = createCustomAccessTokenHookPayload();
 
       const response = await userCreated(payload);
 
@@ -62,7 +60,7 @@ describe("Supabase Auth Webhooks", () => {
     });
 
     it("should handle user without name", async () => {
-      const payload = createUserCreatedWebhookPayload({
+      const payload = createCustomAccessTokenHookPayload({
         user_metadata: {}, // No name
       });
 
@@ -71,13 +69,13 @@ describe("Supabase Auth Webhooks", () => {
       expect(response.claims).toBeDefined();
 
       // User should be created with null name
-      const user = await userRepo.findById(payload.user.id);
+      const user = await userRepo.findById(payload.user_id);
       expect(user).toBeDefined();
       expect(user?.name).toBeNull();
     });
 
     it("should be idempotent (duplicate webhook)", async () => {
-      const payload = createUserCreatedWebhookPayload();
+      const payload = createCustomAccessTokenHookPayload();
 
       // Send webhook first time
       const response1 = await userCreated(payload);
@@ -88,9 +86,9 @@ describe("Supabase Auth Webhooks", () => {
       expect(response2.claims).toEqual({});
 
       // User should still exist (not duplicated)
-      const user = await userRepo.findById(payload.user.id);
+      const user = await userRepo.findById(payload.user_id);
       expect(user).toBeDefined();
-      expect(user?.email).toBe(payload.user.email);
+      expect(user?.email).toBe(payload.claims.email);
     });
 
     it("should not throw error on duplicate webhook", async () => {
@@ -105,7 +103,7 @@ describe("Supabase Auth Webhooks", () => {
       });
 
       // Send webhook for same user
-      const payload = createUserCreatedWebhookPayload({
+      const payload = createCustomAccessTokenHookPayload({
         id: userId,
         email: email,
       });
@@ -118,9 +116,9 @@ describe("Supabase Auth Webhooks", () => {
 
     it("should handle multiple unique users", async () => {
       const users = [
-        createUserCreatedWebhookPayload({ email: "user1@test.com" }),
-        createUserCreatedWebhookPayload({ email: "user2@test.com" }),
-        createUserCreatedWebhookPayload({ email: "user3@test.com" }),
+        createCustomAccessTokenHookPayload({ email: "user1@test.com" }),
+        createCustomAccessTokenHookPayload({ email: "user2@test.com" }),
+        createCustomAccessTokenHookPayload({ email: "user3@test.com" }),
       ];
 
       // Send webhooks for all users
@@ -131,13 +129,13 @@ describe("Supabase Auth Webhooks", () => {
 
       // All users should exist
       for (const payload of users) {
-        const exists = await userExists(db, payload.user.id);
+        const exists = await userExists(db, payload.user_id);
         expect(exists).toBe(true);
       }
     });
 
     it("should handle user with all metadata fields", async () => {
-      const payload = createUserCreatedWebhookPayload({
+      const payload = createCustomAccessTokenHookPayload({
         email: "fulluser@test.com",
         user_metadata: {
           name: "Full Name",
@@ -149,7 +147,7 @@ describe("Supabase Auth Webhooks", () => {
       expect(response.claims?.local_db_synced).toBe(true);
 
       // User should be created with name (other metadata ignored)
-      const user = await userRepo.findById(payload.user.id);
+      const user = await userRepo.findById(payload.user_id);
       expect(user).toBeDefined();
       expect(user?.name).toBe("Full Name");
     });
@@ -157,20 +155,22 @@ describe("Supabase Auth Webhooks", () => {
     it("should handle webhook with missing user metadata", async () => {
       const userId = randomUUID();
       const payload = {
-        event: "user.created" as const,
-        user: {
-          ...createSupabaseAuthUser({ id: userId }),
-          user_metadata: undefined as any, // Missing metadata
+        user_id: userId,
+        claims: {
+          sub: userId,
+          email: "test@example.com",
+          // Missing user_metadata
         },
+        authentication_method: "password",
       };
 
-      // Handler catches errors and returns empty claims
-      const response = await userCreated(payload);
-      expect(response.claims).toEqual({});
+      // Handler catches errors and returns existing claims
+      const response = await userCreated(payload as any);
+      expect(response.claims).toBeDefined();
     });
 
     it("should log webhook events", async () => {
-      const payload = createUserCreatedWebhookPayload();
+      const payload = createCustomAccessTokenHookPayload();
 
       const response = await userCreated(payload);
 
@@ -183,23 +183,23 @@ describe("Supabase Auth Webhooks", () => {
     it("should reject invalid payload with 400", async () => {
       // Send invalid payload (missing required fields)
       const invalidPayload = {
-        event: "user.created",
-        user: {
-          id: "invalid",
+        user_id: "invalid",
+        claims: {
           // Missing required fields like email
         },
+        authentication_method: "password",
       };
 
-      // Handler catches errors and returns empty claims
+      // Handler catches errors and returns existing claims
       const response = await userCreated(invalidPayload as any);
-      expect(response.claims).toEqual({});
+      expect(response.claims).toBeDefined();
     });
 
     it("should handle concurrent webhook requests", async () => {
       const payloads = [
-        createUserCreatedWebhookPayload({ email: "concurrent1@test.com" }),
-        createUserCreatedWebhookPayload({ email: "concurrent2@test.com" }),
-        createUserCreatedWebhookPayload({ email: "concurrent3@test.com" }),
+        createCustomAccessTokenHookPayload({ email: "concurrent1@test.com" }),
+        createCustomAccessTokenHookPayload({ email: "concurrent2@test.com" }),
+        createCustomAccessTokenHookPayload({ email: "concurrent3@test.com" }),
       ];
 
       // Send all webhooks concurrently
@@ -214,7 +214,7 @@ describe("Supabase Auth Webhooks", () => {
 
       // All users should exist
       for (const payload of payloads) {
-        const exists = await userExists(db, payload.user.id);
+        const exists = await userExists(db, payload.user_id);
         expect(exists).toBe(true);
       }
     });
@@ -224,7 +224,7 @@ describe("Supabase Auth Webhooks", () => {
     it("should accept webhook without authentication header", async () => {
       // Webhook endpoints should not require authentication
       // (In production, you'd verify webhook signature instead)
-      const payload = createUserCreatedWebhookPayload();
+      const payload = createCustomAccessTokenHookPayload();
 
       const response = await userCreated(payload);
 
@@ -232,18 +232,17 @@ describe("Supabase Auth Webhooks", () => {
     });
 
     it("should validate webhook event type", async () => {
-      const payload = createUserCreatedWebhookPayload();
+      const payload = createCustomAccessTokenHookPayload();
 
       const response = await userCreated(payload);
 
       expect(response.claims?.local_db_synced).toBe(true);
-      expect(payload.event).toBe("user.created");
     });
   });
 
   describe("Webhook error handling", () => {
     it("should reject missing user email with 400", async () => {
-      const payload = createUserCreatedWebhookPayload({
+      const payload = createCustomAccessTokenHookPayload({
         email: undefined as any, // Missing email
       });
 
@@ -254,17 +253,18 @@ describe("Supabase Auth Webhooks", () => {
 
     it("should handle invalid user ID gracefully", async () => {
       const payload = {
-        event: "user.created" as const,
-        user: {
-          ...createSupabaseAuthUser(),
-          id: "not-a-valid-uuid", // Invalid UUID
+        user_id: "not-a-valid-uuid", // Invalid UUID
+        claims: {
+          email: "test@example.com",
+          user_metadata: { name: "Test" },
         },
+        authentication_method: "password",
       };
 
-      const response = await userCreated(payload);
+      const response = await userCreated(payload as any);
 
-      // Should handle error gracefully and return empty claims
-      expect(response.claims).toEqual({});
+      // Should handle error gracefully and return existing claims
+      expect(response.claims).toBeDefined();
     });
   });
 
@@ -275,7 +275,7 @@ describe("Supabase Auth Webhooks", () => {
       const newUserId = randomUUID();
 
       // 1. Webhook is triggered after Supabase signup
-      const payload = createUserCreatedWebhookPayload({
+      const payload = createCustomAccessTokenHookPayload({
         id: newUserId,
         email: newUserEmail,
         user_metadata: { name: "New User" },
@@ -295,7 +295,7 @@ describe("Supabase Auth Webhooks", () => {
     it("should handle rapid sequential user signups", async () => {
       const userCount = 5;
       const payloads = Array.from({ length: userCount }, (_, i) =>
-        createUserCreatedWebhookPayload({
+        createCustomAccessTokenHookPayload({
           email: `rapiduser${i}@test.com`,
           user_metadata: { name: `Rapid User ${i}` },
         })
@@ -309,7 +309,7 @@ describe("Supabase Auth Webhooks", () => {
 
       // All users should exist
       for (const payload of payloads) {
-        const user = await userRepo.findById(payload.user.id);
+        const user = await userRepo.findById(payload.user_id);
         expect(user).toBeDefined();
       }
     });

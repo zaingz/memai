@@ -10,6 +10,7 @@ import { User } from "../../users/types/domain.types";
 import {
   AuthWebhookPayload,
   SupabaseAuthUser,
+  CustomAccessTokenHookPayload,
 } from "../../users/types/webhook.types";
 
 /**
@@ -122,6 +123,48 @@ export function createUserCreatedWebhookPayloads(
       user_metadata: { name: `Webhook User ${i}` },
     })
   );
+}
+
+/**
+ * Create a Custom Access Token Hook payload
+ * This is the NEW format used by Supabase Custom Access Token hooks
+ *
+ * @param overrides - Optional overrides for user_id, email, name, etc.
+ * @returns CustomAccessTokenHookPayload
+ */
+export function createCustomAccessTokenHookPayload(
+  overrides: {
+    id?: string;
+    email?: string;
+    user_metadata?: { name?: string };
+    authentication_method?: string;
+  } = {}
+): CustomAccessTokenHookPayload {
+  const userId = overrides.id || randomUUID();
+  const email = overrides.email || `test-${userId.slice(0, 8)}@example.com`;
+  const name = overrides.user_metadata?.name || "Test User";
+
+  return {
+    user_id: userId,
+    claims: {
+      sub: userId,
+      email: email,
+      email_confirmed_at: new Date().toISOString(),
+      phone: "",
+      user_metadata: {
+        name: name,
+      },
+      app_metadata: {
+        provider: "email",
+        providers: ["email"],
+      },
+      role: "authenticated",
+      aal: "aal1",
+      session_id: randomUUID(),
+      is_anonymous: false,
+    },
+    authentication_method: overrides.authentication_method || "password",
+  };
 }
 
 /**
