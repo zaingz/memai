@@ -12,6 +12,9 @@ export * from "./event.types";
 // Deepgram types
 export * from "./deepgram.types";
 
+// Gemini types
+export * from "./gemini.types";
+
 // Daily digest types
 export * from "./daily-digest.types";
 

@@ -49,3 +49,14 @@ export const YOUTUBE_URL_PATTERNS = [
   /youtube\.com\/embed\/([^&\s?]+)/,
   /youtube\.com\/v\/([^&\s?]+)/,
 ] as const;
+
+// ============================================
+// Gemini Configuration
+// ============================================
+
+export const GEMINI_CONFIG = {
+  model: "gemini-2.5-flash" as const, // Fast, cost-effective model
+  maxVideoLength: 7200, // 2 hours max (Gemini limit)
+  timeout: 120000, // 2 minutes timeout
+  retries: 2, // Retry twice on failure
+} as const;

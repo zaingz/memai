@@ -72,6 +72,7 @@ export async function handleAudioTranscription(event: AudioDownloadedEvent) {
     });
 
     // Store transcription data in database
+    // Note: This marks the method as 'deepgram' in the updateTranscriptionData method
     await transcriptionRepo.updateTranscriptionData(bookmarkId, {
       transcript,
       deepgramSummary,

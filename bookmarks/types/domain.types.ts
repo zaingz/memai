@@ -41,6 +41,12 @@ export enum TranscriptionStatus {
   FAILED = "failed",
 }
 
+// Transcription method (Gemini vs Deepgram)
+export enum TranscriptionMethod {
+  GEMINI = "gemini",
+  DEEPGRAM = "deepgram",
+}
+
 // Database row interface for transcriptions
 export interface Transcription {
   id: number;
@@ -57,6 +63,9 @@ export interface Transcription {
 
   // Summary data (Stage 3: OpenAI Summary)
   summary: string | null; // OpenAI generated summary
+
+  // Method tracking (Gemini vs Deepgram)
+  transcription_method: TranscriptionMethod | null;
 
   // Status tracking
   status: TranscriptionStatus;

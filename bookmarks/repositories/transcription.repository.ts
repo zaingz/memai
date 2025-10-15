@@ -1,5 +1,10 @@
 import { SQLDatabase } from "encore.dev/storage/sqldb";
-import { Transcription, TranscriptionStatus, DeepgramResponse } from "../types";
+import {
+  Transcription,
+  TranscriptionStatus,
+  TranscriptionMethod,
+  DeepgramResponse,
+} from "../types";
 
 /**
  * Repository for transcription database operations
@@ -87,6 +92,7 @@ export class TranscriptionRepository {
         deepgram_response = ${data.deepgramResponse},
         duration = ${data.duration},
         confidence = ${data.confidence},
+        transcription_method = 'deepgram',
         status = 'processing'
       WHERE bookmark_id = ${bookmarkId}
     `;
@@ -102,6 +108,32 @@ export class TranscriptionRepository {
         summary = ${summary},
         status = 'completed',
         processing_completed_at = NOW()
+      WHERE bookmark_id = ${bookmarkId}
+    `;
+  }
+
+  // ============================================
+  // Gemini-Specific Methods
+  // ============================================
+
+  /**
+   * Stage 2 (Gemini): Update transcription data after Gemini processing
+   * Simpler than Deepgram - Gemini provides just transcript, no audio intelligence
+   */
+  async updateGeminiTranscriptionData(
+    bookmarkId: number,
+    data: {
+      transcript: string;
+      confidence: number;
+    }
+  ): Promise<void> {
+    await this.db.exec`
+      UPDATE transcriptions
+      SET
+        transcript = ${data.transcript},
+        confidence = ${data.confidence},
+        transcription_method = 'gemini',
+        status = 'processing'
       WHERE bookmark_id = ${bookmarkId}
     `;
   }

@@ -49,6 +49,7 @@ export function createTestTranscription(overrides?: Partial<Transcription>): Tra
     deepgram_response: createTestDeepgramResponse(),
     duration: 120.5,
     confidence: 0.95,
+    transcription_method: null,
     status: TranscriptionStatus.COMPLETED,
     error_message: null,
     processing_started_at: new Date("2025-01-01T12:00:00Z"),
