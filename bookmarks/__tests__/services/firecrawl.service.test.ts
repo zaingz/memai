@@ -27,9 +27,9 @@ describe("FirecrawlService", () => {
     service = new FirecrawlService(mockApiKey);
   });
 
-  afterEach(async () => {
-    // Clear all pending timers to prevent unhandled rejections
-    await vi.runOnlyPendingTimersAsync();
+  afterEach(() => {
+    // Clear all pending timers without running them
+    vi.clearAllTimers();
     vi.restoreAllMocks();
   });
 
