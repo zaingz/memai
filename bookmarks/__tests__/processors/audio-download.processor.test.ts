@@ -447,6 +447,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("test");
+      mockGeminiFailure("test");
       mockYouTubeDownloadAndUpload.mockResolvedValue("audio-9-test.mp3");
       mockPublish.mockResolvedValue("msg-ghi");
 
@@ -519,6 +520,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("cleanup");
+      mockGeminiFailure("cleanup");
       mockYouTubeDownloadAndUpload.mockResolvedValue("audio-12-cleanup.mp3");
       mockPublish.mockRejectedValue(new Error("Publish failed")); // Fail after upload
       mockRemove.mockResolvedValue(undefined);
@@ -544,6 +546,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("error");
+      mockGeminiFailure("error");
       mockYouTubeDownloadAndUpload.mockRejectedValue(
         new Error("Download failed")
       );
@@ -568,6 +571,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("noupload");
+      mockGeminiFailure("noupload");
       mockYouTubeDownloadAndUpload.mockRejectedValue(
         new Error("Upload failed")
       );
@@ -589,6 +593,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("cleanupfail");
+      mockGeminiFailure("cleanupfail");
       mockYouTubeDownloadAndUpload.mockResolvedValue("audio-15-cleanupfail.mp3");
       mockPublish.mockRejectedValue(new Error("Publish failed"));
       mockRemove.mockRejectedValue(new Error("Cleanup failed")); // Cleanup fails too
@@ -614,6 +619,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("publish");
+      mockGeminiFailure("publish");
       mockYouTubeDownloadAndUpload.mockResolvedValue("audio-16-publish.mp3");
       mockPublish.mockResolvedValue("msg-mno");
 
@@ -678,6 +684,24 @@ describe("Audio Download Processor", () => {
       mockExtractYouTubeVideoId
         .mockReturnValueOnce("concurrent1")
         .mockReturnValueOnce("concurrent2");
+      mockBuildYouTubeUrl
+        .mockReturnValueOnce("https://www.youtube.com/watch?v=concurrent1")
+        .mockReturnValueOnce("https://www.youtube.com/watch?v=concurrent2");
+      mockGeminiTranscribeYouTubeVideo
+        .mockResolvedValueOnce({
+          transcript: "",
+          confidence: 0,
+          processingTime: 1000,
+          method: "gemini" as const,
+          error: "Private video",
+        })
+        .mockResolvedValueOnce({
+          transcript: "",
+          confidence: 0,
+          processingTime: 1000,
+          method: "gemini" as const,
+          error: "Private video",
+        });
       mockYouTubeDownloadAndUpload
         .mockResolvedValueOnce("audio-18-concurrent1.mp3")
         .mockResolvedValueOnce("audio-19-concurrent2.mp3");
@@ -704,6 +728,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("logging");
+      mockGeminiFailure("logging");
       mockYouTubeDownloadAndUpload.mockResolvedValue("audio-100-logging.mp3");
       mockPublish.mockResolvedValue("msg-123");
 
@@ -730,6 +755,7 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("error");
+      mockGeminiFailure("error");
       mockYouTubeDownloadAndUpload.mockRejectedValue(downloadError);
 
       await handleAudioDownload(event);
