@@ -85,3 +85,40 @@ export interface AuthWebhookPayload {
 export interface AuthWebhookResponse {
   claims?: CustomClaims;
 }
+
+/**
+ * Custom Access Token Hook Payload
+ *
+ * This is the payload structure for Supabase Custom Access Token hooks.
+ * Different from other webhook types!
+ *
+ * @see https://supabase.com/docs/guides/auth/auth-hooks/custom-access-token-hook
+ */
+export interface CustomAccessTokenHookPayload {
+  /**
+   * User ID attempting to sign in
+   */
+  user_id: string;
+
+  /**
+   * Existing JWT claims that will be included in the token
+   * You must preserve all existing claims and can add custom ones
+   */
+  claims: Record<string, any>;
+
+  /**
+   * Authentication method used (password, oauth, otp, etc.)
+   */
+  authentication_method: string;
+}
+
+/**
+ * Custom Access Token Hook Response
+ * Must return the updated claims object
+ */
+export interface CustomAccessTokenHookResponse {
+  /**
+   * Updated claims object (must include all required claims)
+   */
+  claims: Record<string, any>;
+}

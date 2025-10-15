@@ -3,8 +3,8 @@ import log from "encore.dev/log";
 import { db } from "./db";
 import { UserRepository } from "./repositories/user.repository";
 import {
-  AuthWebhookPayload,
-  AuthWebhookResponse,
+  CustomAccessTokenHookPayload,
+  CustomAccessTokenHookResponse,
 } from "./types";
 
 /**
@@ -26,21 +26,21 @@ import {
 const userRepo = new UserRepository(db);
 
 /**
- * Webhook for user creation events
- * Called by Supabase when a new user signs up and confirms their email
+ * Custom Access Token Hook
+ * Called by Supabase before issuing a JWT token
  *
  * Flow:
- * 1. User signs up via Supabase client SDK
- * 2. User confirms email
- * 3. Supabase calls this webhook
- * 4. We create the user in our local database
- * 5. We optionally return custom JWT claims
+ * 1. User signs up/logs in via Supabase
+ * 2. Supabase calls this hook BEFORE issuing the JWT
+ * 3. We sync the user to our local database
+ * 4. We return updated claims including our custom claim
+ * 5. Supabase issues the JWT with the updated claims
  *
  * POST /webhooks/auth/user-created
  * No authentication required (validates via Supabase webhook signature)
  *
- * @param payload Supabase auth webhook payload with user data
- * @returns Optional custom JWT claims to add to the token
+ * @param payload Custom Access Token hook payload with user_id and existing claims
+ * @returns Updated claims object with local_db_synced added
  */
 export const userCreated = api(
   {
@@ -49,34 +49,41 @@ export const userCreated = api(
     path: "/webhooks/auth/user-created",
     auth: false, // No auth required for webhooks
   },
-  async (payload: AuthWebhookPayload): Promise<AuthWebhookResponse> => {
+  async (payload: CustomAccessTokenHookPayload): Promise<CustomAccessTokenHookResponse> => {
     try {
-      log.info("Received user creation webhook", {
-        event: payload.event,
-        userId: payload.user.id,
-        email: payload.user.email,
+      log.info("Received Custom Access Token hook", {
+        userId: payload.user_id,
+        authMethod: payload.authentication_method,
       });
 
-      // Extract user data from webhook
-      const { id, email, user_metadata } = payload.user;
-      const name = user_metadata.name as string | undefined;
+      // Extract user ID
+      const userId = payload.user_id;
+
+      // Get email and name from existing claims
+      const email = payload.claims.email as string;
+      const name = payload.claims.user_metadata?.name as string | undefined;
 
       // Check if user already exists (idempotency)
-      const existingUser = await userRepo.findById(id);
+      const existingUser = await userRepo.findById(userId);
 
       if (existingUser) {
         log.info("User already exists in local database", {
-          userId: id,
+          userId,
           email,
         });
 
-        // Return empty claims (user already exists)
-        return { claims: {} };
+        // Return existing claims + our custom claim
+        return {
+          claims: {
+            ...payload.claims,
+            local_db_synced: true,
+          },
+        };
       }
 
       // Create user in local database
       const user = await userRepo.create({
-        id,
+        id: userId,
         email,
         name,
       });
@@ -86,24 +93,23 @@ export const userCreated = api(
         email: user.email,
       });
 
-      // Return custom claims to add to JWT (optional)
-      // These will be available in the JWT payload
+      // Return existing claims + our custom claim
+      // IMPORTANT: Must preserve all existing claims!
       return {
         claims: {
+          ...payload.claims,
           local_db_synced: true,
         },
       };
     } catch (error) {
-      log.error(error, "Failed to process user creation webhook", {
-        userId: payload.user?.id,
-        email: payload.user?.email,
+      log.error(error, "Failed to process Custom Access Token hook", {
+        userId: payload.user_id,
         error: error instanceof Error ? error.message : String(error),
       });
 
-      // Don't throw error - return empty claims
-      // This prevents Supabase from retrying the webhook endlessly
-      // The user can still authenticate, we'll create them on first API call
-      return { claims: {} };
+      // Don't throw error - return existing claims unchanged
+      // This prevents Supabase from failing authentication
+      return { claims: payload.claims };
     }
   }
 );
