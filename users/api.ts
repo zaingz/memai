@@ -3,7 +3,7 @@ import { getAuthData } from "~encore/auth";
 import log from "encore.dev/log";
 import { db } from "./db";
 import { UserRepository } from "./repositories/user.repository";
-import { MeResponse, UpdateProfileRequest, UpdateProfileResponse } from "./types";
+import { MeResponse, UpdateProfileRequest, UpdateProfileResponse, GetUserIdsResponse } from "./types";
 
 /**
  * API Endpoints for User Management
@@ -169,6 +169,37 @@ export const updateProfile = api(
       }
 
       throw APIError.internal("Failed to update user profile");
+    }
+  }
+);
+
+/**
+ * Get All User IDs Endpoint
+ * Returns all user IDs in the system
+ *
+ * GET /users/ids
+ * Auth: Not required (service-to-service)
+ * Returns: { userIds: string[] }
+ *
+ * NOTE: This endpoint is used by other services (e.g., cron jobs) to
+ * perform batch operations for all users. It is intentionally not authenticated
+ * to allow service-to-service calls. In production, consider using Encore's
+ * service-to-service authentication or restricting this to internal traffic only.
+ */
+export const getUserIds = api(
+  { expose: false, method: "GET", path: "/users/ids", auth: false },
+  async (): Promise<GetUserIdsResponse> => {
+    try {
+      const userIds = await userRepo.listAllUserIds();
+
+      log.info("Fetched all user IDs for batch operation", {
+        count: userIds.length,
+      });
+
+      return { userIds };
+    } catch (error) {
+      log.error(error, "Failed to fetch user IDs");
+      throw APIError.internal("Failed to fetch user IDs");
     }
   }
 );

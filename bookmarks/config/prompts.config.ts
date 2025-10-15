@@ -78,52 +78,73 @@ export const DEFAULT_SUMMARY_PROMPT = SUMMARY_PROMPTS[BookmarkSource.OTHER];
  * Map-Reduce Map Prompt
  * Applied to each batch of summaries to extract themes and insights
  */
-export const MAP_REDUCE_MAP_PROMPT = `Analyze this batch of bookmark summaries and extract the core value:
+export const MAP_REDUCE_MAP_PROMPT = `You are the editorial analyst for the audio show "Memai Daily Briefing".
+Read the item notes below and emit structured beats the host can stitch together.
 
+Item notes:
 {batch_summaries}
 
-For each summary, identify:
-1. **Main Theme/Topic**: What is this about at its core?
-2. **Key Insight**: What's the most valuable idea or learning?
-3. **Actionable Takeaway**: What can someone do with this information?
-4. **Related Concepts**: What other topics/ideas does this connect to?
+Return ONLY valid JSON (no prose) matching this schema — one object per item, in the SAME order:
+[
+  {{
+    "item_number": <integer provided in the notes>,
+    "group_key": "<2-3 word slug in lowercase, reuse exact slug for related items>",
+    "theme_title": "<5-8 word compelling title>",
+    "one_sentence_summary": "<<=25 words capturing the core insight>",
+    "key_facts": ["<=18 word fact 1 with concrete details", "fact 2", "... optional fact 3"],
+    "context_and_implication": "<=30 words showing broader stakes/trend>",
+    "signals": "<=18 words highlighting forward-looking cue or question>",
+    "tags": ["markets", "earnings", "..."],
+    "source_notes": "<short mention of source type, e.g. 'YouTube deep dive'>"
+  }},
+  ...
+]
 
-Be comprehensive but focused. Preserve the unique value of each piece.`;
+Rules:
+- If an item lacks numbers, infer a concrete detail from context (e.g. "signals a sentiment shift among retail investors").
+- Tags must be lowercase single words; include at least one tag per item.
+- Do NOT add commentary outside the JSON payload.`;
 
 /**
  * Map-Reduce Reduce Prompt
  * Combines intermediate analyses into final digest
  */
-export const MAP_REDUCE_REDUCE_PROMPT = `Synthesize these analyses into a compelling daily digest:
+export const CLUSTER_SUMMARY_PROMPT = `You are crafting a unified theme brief for "Memai Daily Briefing".
+Cluster slug: {cluster_slug}
+Candidate titles: {candidate_titles}
+Aggregate tags: {cluster_tags}
+Items:
+{cluster_items}
 
-{intermediate_summaries}
+Respond in VALID JSON with this exact shape:
+{{
+  "cluster_title": "...",
+  "narrative_paragraph": "...", 
+  "key_takeaways": ["...", "..."],
+  "bridge_sentence": "..." 
+}}
 
-Create an insightful digest that:
+Rules:
+- The narrative paragraph should gracefully combine ALL item facts without bulleting or numbering.
+- Key takeaways must be punchy (<18 words) and non-redundant; include at least two distinct angles.
+- Bridge sentence should hint how to segue into another topic (even if hypothetical).`;
 
-## TL;DR (2-3 sentences)
-The most important takeaway from today's content
+export const MAP_REDUCE_REDUCE_PROMPT = `You are the showrunner for "Memai Daily Briefing".
+Date: {digest_date}. Total items: {total_items} (Audio: {audio_count}, Articles: {article_count}).
 
-## Main Themes
-- Identify 2-3 overarching themes
-- Explain how they connect or contrast
-- Note any surprising patterns
+You are given cluster briefs that already blend related items:
+{cluster_briefs}
 
-## Key Insights
-- Most valuable ideas across all content
-- Novel perspectives or approaches
-- Important facts or data points
+Write the final host script as flowing prose (no headings, numbers, or bullet lists). Target 4-5 paragraphs:
+- Paragraph 1: Cold open weaving the strongest cluster into an overarching narrative hook.
+- Middle paragraphs: One per remaining cluster. Integrate their narratives, cite sources conversationally (e.g. "a YouTube deep dive" or "today's blog breakdown"), and explain the stakes and connections.
+- Closing paragraph: Synthesize the day, offer a forward-looking takeaway or question, and sign off with momentum.
 
-## Cross-Content Connections
-- How different pieces relate to each other
-- Complementary or contradictory viewpoints
-- Emerging narratives or trends
-
-## Recommended Next Steps
-- What to prioritize reading/watching in detail
-- Questions to explore further
-- Potential applications
-
-Be engaging and insightful. Focus on WHY this content matters, not just WHAT it says. Target 800-1200 words.`;
+Guidelines:
+- Reuse key takeaways organically; do not repeat them verbatim.
+- Mention variety of sources only when it adds colour or credibility.
+- Keep total length 550-850 words with varied sentence rhythm.
+- Absolutely avoid explicit section labels, bullets, or enumerated lists.`;
 
 // ============================================
 // Metadata Formatting Helpers

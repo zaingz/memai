@@ -165,4 +165,22 @@ export class UserRepository {
       DELETE FROM users WHERE id = ${id}
     `;
   }
+
+  /**
+   * List all user IDs
+   * Used by cron jobs and batch operations
+   * @returns Array of user UUIDs
+   */
+  async listAllUserIds(): Promise<string[]> {
+    const query = this.db.query<{ id: string }>`
+      SELECT id FROM users ORDER BY created_at ASC
+    `;
+
+    const userIds: string[] = [];
+    for await (const row of query) {
+      userIds.push(row.id);
+    }
+
+    return userIds;
+  }
 }

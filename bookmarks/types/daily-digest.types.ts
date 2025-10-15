@@ -118,6 +118,7 @@ export interface TranscriptionSummary {
   transcript: string | null;
   summary: string | null; // OpenAI summary
   deepgram_summary: string | null;
+  bookmark_title?: string | null;
   source: BookmarkSource;
   duration: number | null;
   sentiment: "positive" | "negative" | "neutral" | null;

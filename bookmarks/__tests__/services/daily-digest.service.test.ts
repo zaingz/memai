@@ -66,9 +66,16 @@ describe("DailyDigestService", () => {
     vi.restoreAllMocks();
   });
 
+  const getLastDigestCall = () => {
+    const calls = mockGenerateDigest.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    return calls[calls.length - 1] as [any, any];
+  };
+
   describe("generateDailyDigest", () => {
     const testDate = new Date("2025-01-15T12:00:00Z");
     const userId = "user-123";
+    const digestDateLabel = testDate.toISOString().split("T")[0];
 
     const createMockTranscription = (
       id: number,
@@ -188,7 +195,8 @@ describe("DailyDigestService", () => {
 
       expect(mockRepo.markAsProcessing).toHaveBeenCalledWith(failedDigest.id);
       // Verify generateDigest received unified DigestContentItem format (audio items)
-      expect(mockGenerateDigest).toHaveBeenCalledWith(
+      const [digestItems, digestContext] = getLastDigestCall();
+      expect(digestItems).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             bookmark_id: 1,
@@ -205,6 +213,14 @@ describe("DailyDigestService", () => {
             duration: 300,
           }),
         ])
+      );
+      expect(digestContext).toEqual(
+        expect.objectContaining({
+          digestDate: digestDateLabel,
+          totalItems: 2,
+          audioCount: 2,
+          articleCount: 0,
+        })
       );
       expect(mockRepo.markAsCompleted).toHaveBeenCalledWith(
         failedDigest.id,
@@ -284,7 +300,8 @@ describe("DailyDigestService", () => {
       });
 
       // Verify generateDigest received unified DigestContentItem format (audio items)
-      expect(mockGenerateDigest).toHaveBeenCalledWith(
+      const [createdDigestItems, createdDigestContext] = getLastDigestCall();
+      expect(createdDigestItems).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             content_type: 'audio',
@@ -299,6 +316,14 @@ describe("DailyDigestService", () => {
             source: BookmarkSource.PODCAST,
           }),
         ])
+      );
+      expect(createdDigestContext).toEqual(
+        expect.objectContaining({
+          digestDate: digestDateLabel,
+          totalItems: 3,
+          audioCount: 3,
+          articleCount: 0,
+        })
       );
       expect(mockRepo.markAsCompleted).toHaveBeenCalledWith(
         newDigest.id,
@@ -470,7 +495,8 @@ describe("DailyDigestService", () => {
       );
 
       // Verify mockGenerateDigest received unified content (both audio + articles)
-      expect(mockGenerateDigest).toHaveBeenCalledWith(
+      const [mixedItems, mixedContext] = getLastDigestCall();
+      expect(mixedItems).toEqual(
         expect.arrayContaining([
           // Audio items
           expect.objectContaining({
@@ -499,6 +525,14 @@ describe("DailyDigestService", () => {
             word_count: 500,
           }),
         ])
+      );
+      expect(mixedContext).toEqual(
+        expect.objectContaining({
+          digestDate: digestDateLabel,
+          totalItems: 4,
+          audioCount: 2,
+          articleCount: 2,
+        })
       );
 
       // Verify both queries were called

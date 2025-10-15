@@ -1,19 +1,14 @@
 /**
- * MapReduceDigestService Tests
+ * MapReduceDigestService Tests (narrative clustering pipeline)
  *
- * Unit tests for the map-reduce digest service that:
- * - Handles various input sizes (1 to 1000+ transcriptions)
- * - Performs intelligent batching based on token limits
- * - Executes map phase with parallel processing
- * - Combines intermediate summaries in reduce phase
- * - Handles LangChain errors gracefully
+ * Focus: verify structured map output -> clustering -> reduce orchestration.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BookmarkSource } from "../../types/domain.types";
 import type { DigestContentItem } from "../../types/web-content.types";
 
-// Hoist mock functions for use in module mocks
+// Hoist mocks
 const {
   mockLLMInvoke,
   mockBatchSummaries,
@@ -31,17 +26,28 @@ const {
   },
 }));
 
-// Mock modules before imports
 vi.mock("encore.dev/log", () => ({
   default: mockLog,
 }));
 
-// Mock the db instance to ensure true isolation
-vi.mock("../../db", () => ({
-  db: {
-    query: vi.fn(),
-    queryRow: vi.fn(),
-    exec: vi.fn(),
+vi.mock("../../utils/token-estimator.util", () => ({
+  batchSummaries: mockBatchSummaries,
+  estimateTokenCount: mockEstimateTokenCount,
+}));
+
+vi.mock("../../config/prompts.config", () => ({
+  MAP_REDUCE_MAP_PROMPT: "MAP_PROMPT {batch_summaries}",
+  CLUSTER_SUMMARY_PROMPT: "CLUSTER_PROMPT slug:{cluster_slug} titles:{candidate_titles} tags:{cluster_tags} items:{cluster_items}",
+  MAP_REDUCE_REDUCE_PROMPT: "REDUCE {cluster_briefs} :: {digest_date} :: {total_items} :: {audio_count} :: {article_count}",
+  formatSourceName: vi.fn((source: string) => source),
+}));
+
+vi.mock("../../config/daily-digest.config", () => ({
+  DAILY_DIGEST_CONFIG: {
+    openaiModel: "gpt-4o-mini",
+    temperature: 0.6,
+    maxOutputTokens: 1200,
+    maxTokensPerBatch: 2000,
   },
 }));
 
@@ -65,519 +71,249 @@ vi.mock("@langchain/core/documents", () => ({
     metadata: any;
     constructor(config: { pageContent: string; metadata?: any }) {
       this.pageContent = config.pageContent;
-      this.metadata = config.metadata || {};
+      this.metadata = config.metadata ?? {};
     }
   },
 }));
 
-vi.mock("../../utils/token-estimator.util", () => ({
-  batchSummaries: mockBatchSummaries,
-  estimateTokenCount: mockEstimateTokenCount,
-}));
-
-vi.mock("../../config/prompts.config", () => ({
-  MAP_REDUCE_MAP_PROMPT: "Map prompt: {batch_summaries}",
-  MAP_REDUCE_REDUCE_PROMPT: "Reduce prompt: {intermediate_summaries}",
-  formatSourceName: vi.fn((source) => source),
-}));
-
-vi.mock("../../config/daily-digest.config", () => ({
-  DAILY_DIGEST_CONFIG: {
-    openaiModel: "gpt-4.1-mini",
-    temperature: 0.7,
-    maxOutputTokens: 2000,
-    maxTokensPerBatch: 4000,
-  },
-}));
-
-// Import after mocks
 import { MapReduceDigestService } from "../../services/map-reduce-digest.service";
 
-describe("MapReduceDigestService", () => {
+describe("MapReduceDigestService (clustered narrative flow)", () => {
   let service: MapReduceDigestService;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new MapReduceDigestService("mock-openai-api-key");
+    service = new MapReduceDigestService("fake-api-key");
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.resetAllMocks();
   });
 
-  // Helper to create mock content item (audio or article)
-  const createMockContentItem = (
+  const makeItem = (
     id: number,
     summary: string,
-    source: BookmarkSource = BookmarkSource.YOUTUBE,
-    contentType: 'audio' | 'article' = 'audio'
+    source: BookmarkSource,
+    contentType: "audio" | "article",
+    extra?: Partial<DigestContentItem>
   ): DigestContentItem => ({
     bookmark_id: id,
-    content_type: contentType,
     summary,
     source,
-    duration: contentType === 'audio' ? 120 : undefined,
-    word_count: contentType === 'article' ? 500 : undefined,
-    reading_minutes: contentType === 'article' ? 3 : undefined,
+    content_type: contentType,
+    duration: contentType === "audio" ? 180 : undefined,
+    word_count: contentType === "article" ? 800 : undefined,
+    reading_minutes: contentType === "article" ? 5 : undefined,
     created_at: new Date(),
+    ...extra,
   });
 
-  describe("Single Content Item", () => {
-    it("should handle single content item without batching", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-      ];
+  it("produces final digest via structured map -> cluster -> reduce pipeline", async () => {
+    const items: DigestContentItem[] = [
+      makeItem(
+        1,
+        "Markets recap about tech stocks sliding on macro fears.",
+        BookmarkSource.BLOG,
+        "article",
+        { title: "Tech stocks slide" }
+      ),
+      makeItem(
+        2,
+        "Another market clip covering bond yields and investor sentiment.",
+        BookmarkSource.PODCAST,
+        "audio",
+        { title: "Bond yields up" }
+      ),
+      makeItem(
+        3,
+        "AI regulation debate from policy podcast.",
+        BookmarkSource.PODCAST,
+        "audio",
+        { title: "AI regulation" }
+      ),
+    ];
 
-      mockEstimateTokenCount.mockReturnValue(100);
-      mockBatchSummaries.mockReturnValue([["Summary 1"]]);
-      mockLLMInvoke.mockResolvedValue({
-        content: "Map result: Analyzed summary 1",
+    mockEstimateTokenCount.mockReturnValue(200);
+    mockBatchSummaries.mockReturnValue([["summary1", "summary2"], ["summary3"]]);
+
+    // Map phase responses (two batches)
+    mockLLMInvoke
+      .mockResolvedValueOnce({
+        content: JSON.stringify([
+          {
+            item_number: 1,
+            group_key: "market-pulse",
+            theme_title: "Tech stocks wobble",
+            one_sentence_summary: "Tech shares slide as yields climb.",
+            key_facts: [
+              "Nasdaq down 2.1% amid rate jitters",
+              "Investors rotate into defensives",
+            ],
+            context_and_implication:
+              "Signals traders bracing for higher-for-longer rates.",
+            signals: "Watch earnings calls later this week",
+            tags: ["markets", "stocks"],
+            source_notes: "long-form blog",
+          },
+          {
+            item_number: 2,
+            group_key: "market-pulse",
+            theme_title: "Bond yields bite",
+            one_sentence_summary: "Rising yields pressure growth names.",
+            key_facts: [
+              "10-year yield pops above 4.6%",
+              "Podcast guests flag retail sentiment drop",
+            ],
+            context_and_implication:
+              "Suggests broader rotation into value plays.",
+            signals: "Eyes on CPI print tomorrow",
+            tags: ["markets", "bonds"],
+            source_notes: "podcast briefing",
+          },
+        ]),
+      })
+      .mockResolvedValueOnce({
+        content: JSON.stringify([
+          {
+            item_number: 3,
+            group_key: "ai-policy",
+            theme_title: "Policy makers circle AI",
+            one_sentence_summary:
+              "Lawmakers draft guardrails for enterprise AI rollouts.",
+            key_facts: [
+              "Proposed bill targets transparency",
+              "Startups warn of compliance costs",
+            ],
+            context_and_implication:
+              "Could reshape go-to-market playbooks for AI vendors.",
+            signals: "Expect hearings next month",
+            tags: ["ai", "policy"],
+            source_notes: "policy podcast",
+          },
+        ]),
+      })
+      // Cluster summary (market cluster)
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          cluster_title: "Markets wobble under rate pressure",
+          narrative_paragraph:
+            "Tech shares stumbled as bond yields broke higher, with investors rotating toward defensive plays while strategists braced for stickier inflation.",
+          key_takeaways: [
+            "Nasdaq slides 2.1% as yields climb",
+            "Rotation hints at risk-off sentiment",
+          ],
+          bridge_sentence:
+            "From the trading floor to the policy arena, another debate rolled on.",
+        }),
+      })
+      // Cluster summary (AI cluster)
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          cluster_title: "AI regulation heats up",
+          narrative_paragraph:
+            "Policy makers sketched a transparency-first bill that could slow enterprise AI launches, even as founders warn compliance drag may dampen innovation.",
+          key_takeaways: [
+            "Proposed bill prioritises transparency",
+            "Startups worry about compliance costs",
+          ],
+          bridge_sentence:
+            "All eyes now shift to the next round of hearings.",
+        }),
+      })
+      // Reduce phase output
+      .mockResolvedValueOnce({
+        content: "Final narrated digest",
       });
 
-      const result = await service.generateDigest(contentItems);
-
-      expect(mockBatchSummaries).toHaveBeenCalledWith(["Summary 1"], 4000);
-      expect(mockLLMInvoke).toHaveBeenCalledTimes(1);
-      expect(result).toBe("Map result: Analyzed summary 1"); // Single intermediate, used directly
+    const result = await service.generateDigest(items, {
+      digestDate: "2025-01-15",
     });
 
-    it("should use summary if available, fallback to deepgram_summary", async () => {
-      const contentItems = [
-        {
-          ...createMockContentItem(1, null as any, BookmarkSource.PODCAST),
-          deepgram_summary: "Deepgram summary",
-        },
-      ];
+    expect(result).toBe("Final narrated digest");
+    expect(mockLLMInvoke).toHaveBeenCalledTimes(5);
 
-      mockEstimateTokenCount.mockReturnValue(100);
-      mockBatchSummaries.mockReturnValue([["Deepgram summary"]]);
-mockLLMInvoke.mockResolvedValue({ content: "Analyzed" });
+    // Ensure cluster prompt bundled both market items
+    const clusterPromptCall = mockLLMInvoke.mock.calls[2][0] as string;
+    expect(clusterPromptCall).toContain("market-pulse");
+    expect(clusterPromptCall).toContain("Item 1");
+    expect(clusterPromptCall).toContain("Item 2");
 
-      const result = await service.generateDigest(contentItems);
-
-      expect(mockBatchSummaries).toHaveBeenCalledWith(["Deepgram summary"], 4000);
-      expect(result).toBe("Analyzed");
-    });
-
-    it("should handle missing summary with fallback text", async () => {
-      const contentItems = [
-        {
-          ...createMockContentItem(1, null as any, BookmarkSource.BLOG),
-          deepgram_summary: null,
-        },
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(50);
-      mockBatchSummaries.mockReturnValue([["No summary available"]]);
-mockLLMInvoke.mockResolvedValue({ content: "Processed" });
-
-      const result = await service.generateDigest(contentItems);
-
-      expect(mockBatchSummaries).toHaveBeenCalledWith(["No summary available"], 4000);
-    });
+    // Ensure reduce prompt received cluster briefs (no single-item leftovers)
+    const reducePromptCall = mockLLMInvoke.mock.calls[4][0] as string;
+    expect(reducePromptCall).toContain("Cluster 1");
+    expect(reducePromptCall).toContain("Cluster 2");
+    expect(reducePromptCall).not.toMatch(/Item 1/); // already merged upstream
   });
 
-  describe("Multiple Transcriptions - Small Batch", () => {
-    it("should handle multiple transcriptions in single batch", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
-        createMockContentItem(3, "Summary 3", BookmarkSource.BLOG),
-      ];
+  it("merges unique slugs when tags overlap", async () => {
+    const items: DigestContentItem[] = [
+      makeItem(
+        1,
+        "Macro wrap mention inflation and jobs.",
+        BookmarkSource.BLOG,
+        "article"
+      ),
+      makeItem(
+        2,
+        "Another macro snippet on inflation expectations.",
+        BookmarkSource.YOUTUBE,
+        "audio"
+      ),
+    ];
 
-      mockEstimateTokenCount.mockReturnValue(200);
-      mockBatchSummaries.mockReturnValue([["Summary 1", "Summary 2", "Summary 3"]]);
-mockLLMInvoke.mockResolvedValue({
-        content: "Analyzed 3 summaries",
-      });
+    mockEstimateTokenCount.mockReturnValue(150);
+    mockBatchSummaries.mockReturnValue([["summary1", "summary2"]]);
 
-      const result = await service.generateDigest(contentItems);
+    mockLLMInvoke
+      .mockResolvedValueOnce({
+        content: JSON.stringify([
+          {
+            item_number: 1,
+            group_key: "inflation-watch",
+            theme_title: "Inflation watch",
+            one_sentence_summary: "CPI momentum stays sticky.",
+            key_facts: ["Core CPI at 3.2%", "Wage growth slows"],
+            context_and_implication:
+              "Signals a tough path for rate cuts this quarter.",
+            signals: "Watch Friday's jobs report",
+            tags: ["economy", "inflation"],
+            source_notes: "macro blog",
+          },
+          {
+            item_number: 2,
+            group_key: "macro-brief",
+            theme_title: "Macro brief",
+            one_sentence_summary:
+              "Bond desks price in slower cuts amid inflation chatter.",
+            key_facts: ["Swaps imply two cuts", "Breakevens steady"],
+            context_and_implication:
+              "Markets bracing for higher-for-longer narrative.",
+            signals: "FOMC minutes next week",
+            tags: ["inflation", "macro"],
+            source_notes: "youtube recap",
+          },
+        ]),
+      })
+      // Only one cluster summary call if merged correctly
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          cluster_title: "Inflation story stays centre stage",
+          narrative_paragraph:
+            "Sticky CPI data and bond desks’ hedges suggest the rate-cut story is cooling, with traders eyeing jobs numbers for confirmation.",
+          key_takeaways: [
+            "Core CPI 3.2% keeps pressure on Fed",
+            "Rate-cut bets cool as swaps reprice",
+          ],
+          bridge_sentence: "From macro to tech, other trends emerged.",
+        }),
+      })
+      .mockResolvedValueOnce({ content: "Final merged digest" });
 
-      expect(mockBatchSummaries).toHaveBeenCalledWith(
-        ["Summary 1", "Summary 2", "Summary 3"],
-        4000
-      );
-      expect(mockLLMInvoke).toHaveBeenCalledTimes(1);
-      expect(result).toBe("Analyzed 3 summaries");
-    });
-  });
-
-  describe("Multiple Transcriptions - Multiple Batches", () => {
-    it("should batch and process multiple batches in map phase", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
-        createMockContentItem(3, "Summary 3", BookmarkSource.BLOG),
-        createMockContentItem(4, "Summary 4", BookmarkSource.YOUTUBE),
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(300);
-      // Split into 2 batches
-      mockBatchSummaries.mockReturnValue([
-        ["Summary 1", "Summary 2"],
-        ["Summary 3", "Summary 4"],
-      ]);
-      vi.fn()
-        .mockReturnValueOnce("Formatted batch 1")
-        .mockReturnValueOnce("Formatted batch 2");
-
-      // Map phase returns 2 intermediate summaries
-      mockLLMInvoke
-        .mockResolvedValueOnce({ content: "Intermediate 1" })
-        .mockResolvedValueOnce({ content: "Intermediate 2" })
-        // Reduce phase combines them
-        .mockResolvedValueOnce({ content: "Final digest combining both" });
-
-      const result = await service.generateDigest(contentItems);
-
-      expect(mockBatchSummaries).toHaveBeenCalled();
-      expect(mockLLMInvoke).toHaveBeenCalledTimes(3); // 2 map + 1 reduce
-      expect(result).toBe("Final digest combining both");
-    });
-
-    it("should process map batches in parallel", async () => {
-      const contentItems = Array.from({ length: 10 }, (_, i) =>
-        createMockContentItem(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
-      );
-
-      mockEstimateTokenCount.mockReturnValue(500);
-      // Create 3 batches
-      mockBatchSummaries.mockReturnValue([
-        ["Summary 1", "Summary 2", "Summary 3"],
-        ["Summary 4", "Summary 5", "Summary 6"],
-        ["Summary 7", "Summary 8", "Summary 9", "Summary 10"],
-      ]);
-      vi.fn().mockReturnValue("Formatted");
-
-      let mapCallCount = 0;
-      mockLLMInvoke.mockImplementation(() => {
-        mapCallCount++;
-        if (mapCallCount <= 3) {
-          return Promise.resolve({ content: `Map result ${mapCallCount}` });
-        } else {
-          return Promise.resolve({ content: "Final reduce result" });
-        }
-      });
-
-      const result = await service.generateDigest(contentItems);
-
-      expect(mockLLMInvoke).toHaveBeenCalledTimes(4); // 3 map + 1 reduce
-      expect(result).toBe("Final reduce result");
-    });
-  });
-
-  describe("Reduce Phase", () => {
-    it("should combine multiple intermediate summaries", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(200);
-      mockBatchSummaries.mockReturnValue([["Summary 1"], ["Summary 2"]]);
-      vi.fn().mockReturnValue("Formatted");
-
-      mockLLMInvoke
-        .mockResolvedValueOnce({ content: "Intermediate 1" })
-        .mockResolvedValueOnce({ content: "Intermediate 2" })
-        .mockResolvedValueOnce({ content: "Final combined digest" });
-
-      const result = await service.generateDigest(contentItems);
-
-      // Check that reduce prompt was called with both intermediates
-      const reduceCall = mockLLMInvoke.mock.calls[2][0];
-      expect(reduceCall).toContain("Intermediate 1");
-      expect(reduceCall).toContain("Intermediate 2");
-      expect(result).toBe("Final combined digest");
+    const result = await service.generateDigest(items, {
+      digestDate: "2025-01-16",
     });
 
-    it("should skip reduce phase with single intermediate", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(100);
-      mockBatchSummaries.mockReturnValue([["Summary 1"]]);
-      vi.fn().mockReturnValue("Formatted");
-      mockLLMInvoke.mockResolvedValue({ content: "Single intermediate" });
-
-      const result = await service.generateDigest(contentItems);
-
-      expect(mockLLMInvoke).toHaveBeenCalledTimes(1); // Only map, no reduce
-      expect(result).toBe("Single intermediate");
-    });
-  });
-
-  describe("Token Estimation and Batching", () => {
-    it("should estimate tokens for each summary", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Short", BookmarkSource.YOUTUBE),
-        createMockContentItem(2, "Medium length summary", BookmarkSource.PODCAST),
-        createMockContentItem(3, "Very long summary text", BookmarkSource.BLOG),
-      ];
-
-      mockEstimateTokenCount.mockReturnValueOnce(10).mockReturnValueOnce(50).mockReturnValueOnce(100);
-      mockBatchSummaries.mockReturnValue([["Short", "Medium length summary", "Very long summary text"]]);
-      vi.fn().mockReturnValue("Formatted");
-      mockLLMInvoke.mockResolvedValue({ content: "Result" });
-
-      await service.generateDigest(contentItems);
-
-      expect(mockEstimateTokenCount).toHaveBeenCalledTimes(3);
-      expect(mockEstimateTokenCount).toHaveBeenCalledWith("Short");
-      expect(mockEstimateTokenCount).toHaveBeenCalledWith("Medium length summary");
-      expect(mockEstimateTokenCount).toHaveBeenCalledWith("Very long summary text");
-    });
-
-    it("should batch summaries based on token limits", async () => {
-      const contentItems = Array.from({ length: 20 }, (_, i) =>
-        createMockContentItem(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
-      );
-
-      mockEstimateTokenCount.mockReturnValue(1000);
-      mockBatchSummaries.mockReturnValue([
-        Array.from({ length: 5 }, (_, i) => `Summary ${i + 1}`),
-        Array.from({ length: 5 }, (_, i) => `Summary ${i + 6}`),
-        Array.from({ length: 5 }, (_, i) => `Summary ${i + 11}`),
-        Array.from({ length: 5 }, (_, i) => `Summary ${i + 16}`),
-      ]);
-      vi.fn().mockReturnValue("Formatted");
-      mockLLMInvoke.mockResolvedValue({ content: "Result" });
-
-      await service.generateDigest(contentItems);
-
-      expect(mockBatchSummaries).toHaveBeenCalledWith(
-        expect.any(Array),
-        4000 // maxTokensPerBatch from config
-      );
-    });
-  });
-
-  describe("Error Handling", () => {
-    it("should handle LangChain LLM invocation failure", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(100);
-      mockBatchSummaries.mockReturnValue([["Summary 1"]]);
-      vi.fn().mockReturnValue("Formatted");
-      mockLLMInvoke.mockRejectedValue(new Error("OpenAI API error"));
-
-      await expect(service.generateDigest(contentItems)).rejects.toThrow(
-        "Map-reduce digest generation failed: OpenAI API error"
-      );
-    });
-
-    it("should handle map phase failure", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(200);
-      mockBatchSummaries.mockReturnValue([["Summary 1"], ["Summary 2"]]);
-      vi.fn().mockReturnValue("Formatted");
-      mockLLMInvoke
-        .mockResolvedValueOnce({ content: "Success" })
-        .mockRejectedValueOnce(new Error("Map batch failed"));
-
-      await expect(service.generateDigest(contentItems)).rejects.toThrow(
-        "Map-reduce digest generation failed"
-      );
-    });
-
-    it("should handle reduce phase failure", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(200);
-      mockBatchSummaries.mockReturnValue([["Summary 1"], ["Summary 2"]]);
-      vi.fn().mockReturnValue("Formatted");
-      mockLLMInvoke
-        .mockResolvedValueOnce({ content: "Intermediate 1" })
-        .mockResolvedValueOnce({ content: "Intermediate 2" })
-        .mockRejectedValueOnce(new Error("Reduce failed"));
-
-      await expect(service.generateDigest(contentItems)).rejects.toThrow(
-        "Map-reduce digest generation failed: Reduce failed"
-      );
-    });
-
-    it("should handle non-Error exceptions", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(100);
-      mockBatchSummaries.mockReturnValue([["Summary 1"]]);
-      vi.fn().mockReturnValue("Formatted");
-      mockLLMInvoke.mockRejectedValue("String error");
-
-      await expect(service.generateDigest(contentItems)).rejects.toThrow(
-        "Map-reduce digest generation failed: String error"
-      );
-    });
-  });
-
-  describe("Different Sources", () => {
-    it("should handle mixed sources in digest", async () => {
-      const contentItems = [
-        createMockContentItem(1, "YouTube summary", BookmarkSource.YOUTUBE),
-        createMockContentItem(2, "Podcast summary", BookmarkSource.PODCAST),
-        createMockContentItem(3, "Blog summary", BookmarkSource.BLOG),
-        createMockContentItem(4, "Reddit summary", BookmarkSource.REDDIT),
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(200);
-      mockBatchSummaries.mockReturnValue([
-        ["YouTube summary", "Podcast summary", "Blog summary", "Reddit summary"],
-      ]);
-      vi.fn().mockReturnValue("Mixed sources formatted");
-      mockLLMInvoke.mockResolvedValue({ content: "Multi-source digest" });
-
-      const result = await service.generateDigest(contentItems);
-
-      expect(result).toBe("Multi-source digest");
-      expect(mockFormatSummariesWithMetadata).toHaveBeenCalled();
-    });
-  });
-
-  describe("Large Scale Processing", () => {
-    it("should handle 100+ transcriptions efficiently", async () => {
-      const contentItems = Array.from({ length: 100 }, (_, i) =>
-        createMockContentItem(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
-      );
-
-      mockEstimateTokenCount.mockReturnValue(300);
-      // Simulate 10 batches of 10 summaries each
-      const batches = Array.from({ length: 10 }, (_, batchIdx) =>
-        Array.from({ length: 10 }, (_, i) => `Summary ${batchIdx * 10 + i + 1}`)
-      );
-      mockBatchSummaries.mockReturnValue(batches);
-      vi.fn().mockReturnValue("Formatted");
-
-      let callCount = 0;
-      mockLLMInvoke.mockImplementation(() => {
-        callCount++;
-        if (callCount <= 10) {
-          return Promise.resolve({ content: `Map result ${callCount}` });
-        } else {
-          return Promise.resolve({ content: "Final digest" });
-        }
-      });
-
-      const result = await service.generateDigest(contentItems);
-
-      expect(mockBatchSummaries).toHaveBeenCalled();
-      expect(mockLLMInvoke).toHaveBeenCalledTimes(11); // 10 map + 1 reduce
-      expect(result).toBe("Final digest");
-    });
-  });
-
-  describe("Edge Cases", () => {
-    it("should handle empty transcriptions array gracefully", async () => {
-      const transcriptions: DigestContentItem[] = [];
-
-      mockEstimateTokenCount.mockReturnValue(0);
-      mockBatchSummaries.mockReturnValue([]);
-
-      // Should fail during map phase with empty batches
-      await expect(service.generateDigest(contentItems)).rejects.toThrow();
-    });
-
-    it("should handle transcriptions with very long summaries", async () => {
-      const longSummary = "Very long summary ".repeat(1000);
-      const contentItems = [
-        createMockContentItem(1, longSummary, BookmarkSource.YOUTUBE),
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(10000);
-      mockBatchSummaries.mockReturnValue([[longSummary]]);
-      vi.fn().mockReturnValue("Long formatted");
-      mockLLMInvoke.mockResolvedValue({ content: "Processed long summary" });
-
-      const result = await service.generateDigest(contentItems);
-
-      expect(result).toBe("Processed long summary");
-    });
-  });
-
-  describe("Logging and Observability", () => {
-    it("should log successful digest generation", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-        createMockContentItem(2, "Summary 2", BookmarkSource.PODCAST),
-      ];
-
-      mockEstimateTokenCount.mockReturnValue(200);
-      mockBatchSummaries.mockReturnValue([["Summary 1"], ["Summary 2"]]);
-      vi.fn().mockReturnValue("Formatted");
-      mockLLMInvoke
-        .mockResolvedValueOnce({ content: "Intermediate 1" })
-        .mockResolvedValueOnce({ content: "Intermediate 2" })
-        .mockResolvedValueOnce({ content: "Final digest" });
-
-      await service.generateDigest(contentItems);
-
-      expect(mockLog.info).toHaveBeenCalledWith(
-        "Map-reduce digest generation completed",
-        expect.objectContaining({
-          finalDigestLength: expect.any(Number),
-        })
-      );
-    });
-
-    it("should log errors when LLM invocation fails", async () => {
-      const contentItems = [
-        createMockContentItem(1, "Summary 1", BookmarkSource.YOUTUBE),
-      ];
-
-      const llmError = new Error("OpenAI API error");
-      mockEstimateTokenCount.mockReturnValue(100);
-      mockBatchSummaries.mockReturnValue([["Summary 1"]]);
-      vi.fn().mockReturnValue("Formatted");
-      mockLLMInvoke.mockRejectedValue(llmError);
-
-      await expect(service.generateDigest(contentItems)).rejects.toThrow();
-
-      expect(mockLog.error).toHaveBeenCalledWith(
-        llmError,
-        "Map-reduce digest generation failed"
-      );
-    });
-
-    it("should log map phase progress", async () => {
-      const contentItems = Array.from({ length: 10 }, (_, i) =>
-        createMockContentItem(i + 1, `Summary ${i + 1}`, BookmarkSource.YOUTUBE)
-      );
-
-      mockEstimateTokenCount.mockReturnValue(500);
-      mockBatchSummaries.mockReturnValue([
-        ["Summary 1", "Summary 2", "Summary 3"],
-        ["Summary 4", "Summary 5", "Summary 6"],
-        ["Summary 7", "Summary 8", "Summary 9", "Summary 10"],
-      ]);
-      vi.fn().mockReturnValue("Formatted");
-      mockLLMInvoke.mockResolvedValue({ content: "Result" });
-
-      await service.generateDigest(contentItems);
-
-      expect(mockLog.info).toHaveBeenCalledWith(
-        "Map phase completed",
-        expect.objectContaining({
-          intermediateCount: 3,
-        })
-      );
-    });
-  });
-
-  describe("Service Initialization", () => {
-    it("should initialize with API key", () => {
-      const newService = new MapReduceDigestService("test-api-key");
-      expect(newService).toBeInstanceOf(MapReduceDigestService);
-    });
+    expect(result).toBe("Final merged digest");
+    expect(mockLLMInvoke).toHaveBeenCalledTimes(3); // map (1), cluster (1), reduce (1)
   });
 });

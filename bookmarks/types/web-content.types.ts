@@ -70,8 +70,10 @@ export interface DigestContentItem {
   content_type: 'audio' | 'article';
   summary: string;
   source: BookmarkSource;
+  title?: string | null;
   duration?: number;        // audio only
   word_count?: number;      // article only
   reading_minutes?: number; // article only
+  sentiment?: "positive" | "negative" | "neutral" | null;
   created_at: Date;
 }

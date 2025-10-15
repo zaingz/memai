@@ -57,3 +57,11 @@ export interface UpdateProfileRequest {
 export interface UpdateProfileResponse {
   user: SafeUser;
 }
+
+/**
+ * Response for get all user IDs endpoint
+ * Used for service-to-service calls (e.g., cron jobs generating per-user data)
+ */
+export interface GetUserIdsResponse {
+  userIds: string[];
+}

@@ -82,11 +82,14 @@ export class DailyDigestService {
         userId
       );
 
+      const audioItemCount = contentItems.filter(c => c.content_type === 'audio').length;
+      const articleItemCount = contentItems.filter(c => c.content_type === 'article').length;
+
       log.info("Fetched content for digest", {
         digestDate: digestDateStr,
         totalItems: contentItems.length,
-        audioCount: contentItems.filter(c => c.content_type === 'audio').length,
-        articleCount: contentItems.filter(c => c.content_type === 'article').length,
+        audioCount: audioItemCount,
+        articleCount: articleItemCount,
       });
 
       // Step 4: Calculate metadata
@@ -128,7 +131,12 @@ export class DailyDigestService {
 
       // Step 6: Generate unified summary using map-reduce (audio + web content)
       const startTime = Date.now();
-      const digestContent = await this.generateUnifiedSummary(contentItems);
+      const digestContent = await this.generateUnifiedSummary(contentItems, {
+        digestDate: digestDateStr,
+        totalItems: bookmarkCount,
+        audioCount: audioItemCount,
+        articleCount: articleItemCount,
+      });
       const processingDurationMs = Date.now() - startTime;
 
       // Step 7: Prepare processing metadata
@@ -235,7 +243,9 @@ export class DailyDigestService {
       content_type: 'audio' as const,
       summary: t.summary || t.deepgram_summary || "",
       source: t.source,
+      title: t.bookmark_title ?? null,
       duration: t.duration || undefined,
+      sentiment: t.sentiment || undefined,
       created_at: t.created_at,
     }));
 
@@ -296,7 +306,13 @@ export class DailyDigestService {
    * @returns Unified digest summary text
    */
   private async generateUnifiedSummary(
-    contentItems: DigestContentItem[]
+    contentItems: DigestContentItem[],
+    context: {
+      digestDate: string;
+      totalItems: number;
+      audioCount: number;
+      articleCount: number;
+    }
   ): Promise<string | null> {
     // If no content, return null
     if (contentItems.length === 0) {
@@ -305,9 +321,10 @@ export class DailyDigestService {
     }
 
     log.info("Generating unified summary with map-reduce", {
-      contentItemCount: contentItems.length,
-      audioCount: contentItems.filter(c => c.content_type === 'audio').length,
-      articleCount: contentItems.filter(c => c.content_type === 'article').length,
+      digestDate: context.digestDate,
+      contentItemCount: context.totalItems,
+      audioCount: context.audioCount,
+      articleCount: context.articleCount,
     });
 
     try {
@@ -319,19 +336,21 @@ export class DailyDigestService {
       const { MapReduceDigestService } = await import("./map-reduce-digest.service");
       const mapReduceService = new MapReduceDigestService(openaiApiKey());
 
-      const digest = await mapReduceService.generateDigest(contentItems);
+      const digest = await mapReduceService.generateDigest(contentItems, context);
 
       log.info("Unified summary generated successfully", {
-        contentItemCount: contentItems.length,
-        audioCount: contentItems.filter(c => c.content_type === 'audio').length,
-        articleCount: contentItems.filter(c => c.content_type === 'article').length,
+        digestDate: context.digestDate,
+        contentItemCount: context.totalItems,
+        audioCount: context.audioCount,
+        articleCount: context.articleCount,
         digestLength: digest.length,
       });
 
       return digest;
     } catch (error) {
       log.error(error, "Failed to generate unified summary", {
-        contentItemCount: contentItems.length,
+        digestDate: context.digestDate,
+        contentItemCount: context.totalItems,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
 

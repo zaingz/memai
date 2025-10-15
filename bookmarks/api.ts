@@ -380,31 +380,101 @@ export const listDailyDigests = api(
   }
 );
 
-// CRON JOB ENDPOINT - Generate yesterday's digest (no parameters for cron compatibility)
+// CRON JOB ENDPOINT - Generate yesterday's digest for ALL users
 // This endpoint is called by the daily cron job at 9 PM GMT
 export const generateYesterdaysDigest = api(
   { expose: false, method: "POST", path: "/digests/generate-yesterday" },
   async (): Promise<GenerateDailyDigestResponse> => {
     // Generate digest for yesterday (default behavior)
     const { digestDate } = getDigestDateRange();
+    const digestDateStr = digestDate.toISOString().split("T")[0];
 
-    log.info("Cron job triggered: Generating yesterday's digest", {
-      digestDate: digestDate.toISOString().split("T")[0],
+    log.info("Cron job triggered: Generating yesterday's digest for all users", {
+      digestDate: digestDateStr,
     });
 
     try {
-      const digest = await dailyDigestService.generateDailyDigest({
-        date: digestDate,
-        forceRegenerate: false,
+      // Import users service client for service-to-service call
+      const { users } = await import("~encore/clients");
+
+      // Fetch all user IDs
+      const { userIds } = await users.getUserIds();
+
+      log.info("Fetched users for digest generation", {
+        digestDate: digestDateStr,
+        userCount: userIds.length,
       });
 
+      // Track results
+      const results = {
+        total: userIds.length,
+        successful: 0,
+        failed: 0,
+        errors: [] as Array<{ userId: string; error: string }>,
+      };
+
+      // Generate digest for each user
+      for (const userId of userIds) {
+        try {
+          await dailyDigestService.generateDailyDigest({
+            date: digestDate,
+            userId,
+            forceRegenerate: false,
+          });
+
+          results.successful++;
+
+          log.info("Generated digest for user", {
+            userId,
+            digestDate: digestDateStr,
+          });
+        } catch (error) {
+          results.failed++;
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+
+          results.errors.push({ userId, error: errorMessage });
+
+          log.error(error, "Failed to generate digest for user", {
+            userId,
+            digestDate: digestDateStr,
+            errorMessage,
+          });
+
+          // Continue processing other users even if one fails
+        }
+      }
+
+      // Log summary
+      log.info("Cron job completed: Daily digest generation summary", {
+        digestDate: digestDateStr,
+        total: results.total,
+        successful: results.successful,
+        failed: results.failed,
+        successRate: `${((results.successful / results.total) * 100).toFixed(1)}%`,
+      });
+
+      // If all failed, throw error
+      if (results.failed === results.total && results.total > 0) {
+        throw new Error(
+          `All ${results.total} digest generation attempts failed`
+        );
+      }
+
+      // Return summary as digest (using the first user's digest if available, or a summary)
+      // Note: This is a cron job, so the return value is mainly for logging
+      const firstUserId = userIds[0];
+      const digest = firstUserId
+        ? await dailyDigestService.getDigestByDate(digestDate, firstUserId)
+        : null;
+
       return {
-        digest,
-        message: "Yesterday's digest generated successfully by cron job",
+        digest: digest || ({} as any), // Placeholder for cron job response
+        message: `Cron job completed: Generated ${results.successful}/${results.total} digests successfully`,
       };
     } catch (error) {
       log.error(error, "Cron job failed to generate yesterday's digest", {
-        digestDate: digestDate.toISOString().split("T")[0],
+        digestDate: digestDateStr,
       });
 
       throw APIError.internal(

@@ -1,39 +1,168 @@
 import log from "encore.dev/log";
 import { ChatOpenAI } from "@langchain/openai";
 import { loadSummarizationChain } from "langchain/chains";
-import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { Document } from "@langchain/core/documents";
 import { DigestContentItem } from "../types/web-content.types";
 import { DAILY_DIGEST_CONFIG } from "../config/daily-digest.config";
 import {
   MAP_REDUCE_MAP_PROMPT,
   MAP_REDUCE_REDUCE_PROMPT,
+  CLUSTER_SUMMARY_PROMPT,
   formatSourceName,
 } from "../config/prompts.config";
 import { batchSummaries, estimateTokenCount } from "../utils/token-estimator.util";
+
+export interface DigestNarrativeContext {
+  digestDate?: string;
+  totalItems?: number;
+  audioCount?: number;
+  articleCount?: number;
+}
+
+interface MapBeat {
+  itemNumber: number;
+  groupKey: string;
+  rawGroupKey: string;
+  themeTitle: string;
+  oneSentenceSummary: string;
+  keyFacts: string[];
+  contextAndImplication: string;
+  signals: string;
+  tags: string[];
+  sourceNotes: string;
+}
+
+interface ThemeCluster {
+  slug: string;
+  beats: MapBeat[];
+  tags: Set<string>;
+}
+
+interface ClusterSummary {
+  slug: string;
+  title: string;
+  narrative: string;
+  keyTakeaways: string[];
+  bridgeSentence: string;
+  tags: string[];
+}
+
+function slugify(value: string, fallback: string): string {
+  const base = value?.trim().toLowerCase() || fallback.trim().toLowerCase();
+  const slug = base
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return slug || "general";
+}
+
+function normalizeTags(tags: string[] | undefined): string[] {
+  if (!tags) return [];
+  return Array.from(
+    new Set(
+      tags
+        .flatMap((tag) =>
+          tag
+            .split(/[,\s]+/)
+            .map((t) => t.trim().toLowerCase())
+            .filter(Boolean)
+        )
+    )
+  );
+}
+
+function termOverlap(a: string, b: string): number {
+  const tokenize = (value: string) =>
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length > 3);
+
+  const setA = new Set(tokenize(a));
+  const setB = new Set(tokenize(b));
+  if (!setA.size || !setB.size) return 0;
+  let intersection = 0;
+  setA.forEach((token) => {
+    if (setB.has(token)) intersection += 1;
+  });
+  return intersection / Math.min(setA.size, setB.size);
+}
+
+function extractJsonPayload(text: string): any {
+  const trimmed = text.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Try fenced code block
+    const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (match) {
+      return extractJsonPayload(match[1]);
+    }
+    // Try to locate array/object via first bracket
+    const firstBracket = trimmed.indexOf("[");
+    const firstBrace = trimmed.indexOf("{");
+    const start = firstBracket !== -1 ? firstBracket : firstBrace;
+    if (start !== -1) {
+      const snippet = trimmed.slice(start);
+      try {
+        return JSON.parse(snippet);
+      } catch {
+        // fall through
+      }
+    }
+    throw new Error("Unable to parse JSON payload from LLM response");
+  }
+}
 
 /**
  * Format DigestContentItems with metadata for LLM prompts
  * Handles both audio and article content types
  */
-function formatContentItemsWithMetadata(items: DigestContentItem[]): string {
+function formatContentItemsWithMetadata(
+  items: DigestContentItem[],
+  startIndex: number
+): string {
   return items.map((item, idx) => {
     const sourceName = formatSourceName(item.source);
     const contentType = item.content_type === 'audio' ? '🎧 Audio' : '📄 Article';
 
-    // Format duration for audio content
-    const durationStr = item.duration
-      ? ` (${Math.round(item.duration / 60)} min)`
-      : '';
+    const title = item.title || sourceName;
+    const createdAt = item.created_at
+      ? new Date(item.created_at).toISOString()
+      : "unknown";
+    const itemNumber = startIndex + idx + 1;
 
-    // Format reading time for articles
-    const readingStr = item.reading_minutes
-      ? ` (${item.reading_minutes} min read)`
-      : '';
+    const durationStr =
+      item.content_type === "audio" && item.duration
+        ? `${Math.max(1, Math.round(item.duration / 60))} min runtime`
+        : null;
 
-    const timeInfo = item.content_type === 'audio' ? durationStr : readingStr;
+    const readingStr =
+      item.content_type === "article" && item.reading_minutes
+        ? `${item.reading_minutes} min read`
+        : null;
 
-    return `${idx + 1}. ${contentType} - ${sourceName}${timeInfo}
+    const sentimentStr = item.sentiment
+      ? `tone: ${item.sentiment}`
+      : null;
+
+    const metaParts = [
+      durationStr,
+      readingStr,
+      sentimentStr,
+    ].filter(Boolean);
+
+    const metadataLine = metaParts.length
+      ? `Meta: ${metaParts.join(" · ")}`
+      : null;
+
+    return `[ITEM ${itemNumber}]
+Type: ${contentType}
+Title: ${title}
+Source: ${sourceName}
+Captured: ${createdAt}
+${metadataLine ? metadataLine + "\n" : ""}Summary:
 ${item.summary}
 ---`;
   }).join('\n\n');
@@ -55,17 +184,156 @@ export class MapReduceDigestService {
     });
   }
 
+  private clusterBeats(beats: MapBeat[]): ThemeCluster[] {
+    const clusters: ThemeCluster[] = [];
+    const slugMap = new Map<string, ThemeCluster>();
+
+    for (const beat of beats) {
+      const normalizedSlug = beat.groupKey || slugify(beat.themeTitle, "general");
+      let cluster = slugMap.get(normalizedSlug);
+
+      if (!cluster) {
+        cluster = this.findClusterForBeat(normalizedSlug, beat, clusters);
+        if (!cluster) {
+          cluster = {
+            slug: normalizedSlug,
+            beats: [],
+            tags: new Set<string>(),
+          };
+          clusters.push(cluster);
+        }
+        slugMap.set(normalizedSlug, cluster);
+      }
+
+      cluster.beats.push(beat);
+      beat.tags.forEach((tag) => cluster!.tags.add(tag));
+    }
+
+    return clusters;
+  }
+
+  private findClusterForBeat(
+    slug: string,
+    beat: MapBeat,
+    clusters: ThemeCluster[]
+  ): ThemeCluster | undefined {
+    const beatTags = new Set(beat.tags);
+
+    // Prefer clusters with same slug already present
+    const directMatch = clusters.find((cluster) => cluster.slug === slug);
+    if (directMatch) {
+      return directMatch;
+    }
+
+    let bestMatch: { cluster: ThemeCluster; score: number } | undefined;
+
+    for (const cluster of clusters) {
+      const clusterTags = cluster.tags;
+      let overlap = 0;
+      beatTags.forEach((tag) => {
+        if (clusterTags.has(tag)) overlap += 1;
+      });
+
+      const tagScore =
+        beatTags.size && clusterTags.size
+          ? overlap / Math.min(beatTags.size, clusterTags.size)
+          : 0;
+
+      const titleScore = termOverlap(
+        beat.themeTitle,
+        cluster.beats[0]?.themeTitle || ""
+      );
+
+      const combinedScore = Math.max(tagScore, titleScore);
+
+      if (combinedScore >= 0.5) {
+        if (!bestMatch || combinedScore > bestMatch.score) {
+          bestMatch = { cluster, score: combinedScore };
+        }
+      }
+    }
+
+    return bestMatch?.cluster;
+  }
+
+  private async summarizeClusters(
+    clusters: ThemeCluster[]
+  ): Promise<ClusterSummary[]> {
+    const summaries: ClusterSummary[] = [];
+
+    for (const [index, cluster] of clusters.entries()) {
+      const candidateTitles = Array.from(
+        new Set(cluster.beats.map((beat) => beat.themeTitle).filter(Boolean))
+      );
+
+      const clusterItems = cluster.beats
+        .map((beat) => {
+          const facts = beat.keyFacts.map((fact) => `• ${fact}`).join("\n");
+          const tags = beat.tags.join(", ") || "none";
+          return `Item ${beat.itemNumber}:
+  Title: ${beat.themeTitle}
+  Summary: ${beat.oneSentenceSummary}
+  Key facts:
+${facts ? facts : "• (fact missing)"}
+  Context: ${beat.contextAndImplication}
+  Signals: ${beat.signals}
+  Tags: ${tags}
+  Source: ${beat.sourceNotes}`;
+        })
+        .join("\n\n");
+
+      const prompt = CLUSTER_SUMMARY_PROMPT.replace(
+        "{cluster_slug}",
+        cluster.slug
+      )
+        .replace("{candidate_titles}", candidateTitles.join(" | ") || cluster.slug)
+        .replace("{cluster_tags}", Array.from(cluster.tags).join(", ") || "general")
+        .replace("{cluster_items}", clusterItems);
+
+      const response = await this.llm.invoke(prompt);
+      const payload = extractJsonPayload(response.content.toString());
+
+      if (!payload?.cluster_title || !payload?.narrative_paragraph) {
+        throw new Error(
+          `Cluster summary missing fields for slug ${cluster.slug}`
+        );
+      }
+
+      const keyTakeaways = Array.isArray(payload.key_takeaways)
+        ? payload.key_takeaways.map((t: any) => t.toString())
+        : [];
+
+      summaries.push({
+        slug: cluster.slug,
+        title: payload.cluster_title.toString(),
+        narrative: payload.narrative_paragraph.toString(),
+        keyTakeaways,
+        bridgeSentence: (payload.bridge_sentence || "").toString(),
+        tags: Array.from(cluster.tags),
+      });
+    }
+
+    return summaries;
+  }
+
   /**
    * Generates digest using LangChain map-reduce
    * Intelligently handles any number of content items (audio + web)
    * @param contentItems - Array of completed content items (audio transcriptions + web content)
    * @returns Final digest text
    */
-  async generateDigest(contentItems: DigestContentItem[]): Promise<string> {
+  async generateDigest(
+    contentItems: DigestContentItem[],
+    context?: DigestNarrativeContext
+  ): Promise<string> {
+    const audioCount = contentItems.filter(c => c.content_type === 'audio').length;
+    const articleCount = contentItems.filter(c => c.content_type === 'article').length;
+    const totalItems = contentItems.length;
+
     log.info("Starting map-reduce digest generation", {
-      contentItemCount: contentItems.length,
-      audioCount: contentItems.filter(c => c.content_type === 'audio').length,
-      articleCount: contentItems.filter(c => c.content_type === 'article').length,
+      contentItemCount: totalItems,
+      audioCount,
+      articleCount,
     });
 
     try {
@@ -93,15 +361,35 @@ export class MapReduceDigestService {
         ),
       });
 
-      // Step 3: Map phase - Process each batch
-      const intermediateSummaries = await this.mapPhase(batches, contentItems);
+      // Step 3: Map phase - Process each batch into structured beats
+      const mapBeats = await this.mapPhase(batches, contentItems);
 
       log.info("Map phase completed", {
-        intermediateCount: intermediateSummaries.length,
+        beatCount: mapBeats.length,
       });
 
-      // Step 4: Reduce phase - Combine intermediate summaries
-      const finalDigest = await this.reducePhase(intermediateSummaries);
+      // Step 4: Cluster beats into coherent themes
+      const clusters = this.clusterBeats(mapBeats);
+
+      log.info("Clustering completed", {
+        clusterCount: clusters.length,
+        clusterSlugs: clusters.map((c) => c.slug),
+      });
+
+      // Step 5: Summarise clusters into narrative-ready briefs
+      const clusterSummaries = await this.summarizeClusters(clusters);
+
+      log.info("Cluster summarisation completed", {
+        clusterSummaryCount: clusterSummaries.length,
+      });
+
+      // Step 6: Reduce phase - Combine cluster summaries into final digest
+      const finalDigest = await this.reducePhase(clusterSummaries, {
+        digestDate: context?.digestDate,
+        totalItems: context?.totalItems ?? totalItems,
+        audioCount: context?.audioCount ?? audioCount,
+        articleCount: context?.articleCount ?? articleCount,
+      });
 
       log.info("Map-reduce digest generation completed", {
         finalDigestLength: finalDigest.length,
@@ -125,75 +413,125 @@ export class MapReduceDigestService {
   private async mapPhase(
     batches: string[][],
     contentItems: DigestContentItem[]
-  ): Promise<string[]> {
+  ): Promise<MapBeat[]> {
     log.info("Starting map phase", { batchCount: batches.length });
 
-    // Track current index for matching summaries to content items
+    const beats: MapBeat[] = [];
     let currentIndex = 0;
 
-    const mapPromises = batches.map(async (batch, batchIndex) => {
-      log.info("Processing batch", {
-        batchIndex,
-        batchSize: batch.length,
-      });
-
-      // Get corresponding content items for this batch
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
       const batchContentItems = contentItems.slice(
         currentIndex,
         currentIndex + batch.length
       );
-      currentIndex += batch.length;
 
-      // Format with metadata (audio vs article info)
-      const formattedBatch = formatContentItemsWithMetadata(batchContentItems);
-
-      // Create document for LangChain
-      const doc = new Document({
-        pageContent: formattedBatch,
-        metadata: { batchIndex },
+      log.info("Processing batch", {
+        batchIndex,
+        batchSize: batch.length,
+        startIndex: currentIndex,
       });
 
-      // Process with map prompt
-      const result = await this.llm.invoke(
-        MAP_REDUCE_MAP_PROMPT.replace("{batch_summaries}", formattedBatch)
+      const formattedBatch = formatContentItemsWithMetadata(
+        batchContentItems,
+        currentIndex
       );
 
-      return result.content.toString();
-    });
+      const prompt = MAP_REDUCE_MAP_PROMPT.replace(
+        "{batch_summaries}",
+        formattedBatch
+      );
 
-    return await Promise.all(mapPromises);
-  }
+      const response = await this.llm.invoke(prompt);
+      const payload = extractJsonPayload(response.content.toString());
 
-  /**
-   * Reduce phase: Combine intermediate summaries into final digest
-   * @param intermediateSummaries - Array of intermediate summaries from map phase
-   * @returns Final unified digest
-   */
-  private async reducePhase(intermediateSummaries: string[]): Promise<string> {
-    log.info("Starting reduce phase", {
-      intermediateCount: intermediateSummaries.length,
-    });
+      if (!Array.isArray(payload)) {
+        throw new Error("Map phase response was not an array");
+      }
 
-    // If only one intermediate summary, use it directly
-    if (intermediateSummaries.length === 1) {
-      log.info("Single intermediate summary, using directly");
-      return intermediateSummaries[0];
+      if (payload.length !== batch.length) {
+        log.warn("Map response length mismatch, will align best effort", {
+          expected: batch.length,
+          received: payload.length,
+        });
+      }
+
+      payload.forEach((rawBeat: any, idx: number) => {
+        const itemNumber =
+          typeof rawBeat?.item_number === "number"
+            ? rawBeat.item_number
+            : currentIndex + idx + 1;
+
+        const cleanKey = slugify(
+          rawBeat?.group_key || "",
+          rawBeat?.theme_title || ""
+        );
+
+        const tags = normalizeTags(rawBeat?.tags);
+
+        beats.push({
+          itemNumber,
+          groupKey: cleanKey,
+          rawGroupKey: (rawBeat?.group_key || "").toString(),
+          themeTitle: (rawBeat?.theme_title || "").toString(),
+          oneSentenceSummary: (rawBeat?.one_sentence_summary || "").toString(),
+          keyFacts:
+            Array.isArray(rawBeat?.key_facts) && rawBeat.key_facts.length
+              ? rawBeat.key_facts.map((f: any) => f.toString())
+              : [],
+          contextAndImplication: (
+            rawBeat?.context_and_implication || ""
+          ).toString(),
+          signals: (rawBeat?.signals || "").toString(),
+          tags,
+          sourceNotes: (rawBeat?.source_notes || "").toString(),
+        });
+      });
+
+      currentIndex += batch.length;
     }
 
-    // Combine intermediate summaries
-    const combinedText = intermediateSummaries
-      .map((summary, idx) => `### Batch ${idx + 1}\n\n${summary}\n\n---\n`)
-      .join("\n");
+    return beats;
+  }
 
-    // Build final reduce prompt
-    const reducePrompt = MAP_REDUCE_REDUCE_PROMPT.replace(
-      "{intermediate_summaries}",
-      combinedText
-    );
+  private async reducePhase(
+    clusterSummaries: ClusterSummary[],
+    context: DigestNarrativeContext
+  ): Promise<string> {
+    log.info("Starting reduce phase", {
+      clusterCount: clusterSummaries.length,
+    });
 
-    // Generate final digest
+    if (clusterSummaries.length === 0) {
+      throw new Error("No cluster summaries available for reduction");
+    }
+
+    const clusterBriefs = clusterSummaries
+      .map((cluster, idx) => {
+        const takeaways = cluster.keyTakeaways
+          .map((t) => `- ${t}`)
+          .join("\n");
+        return `Cluster ${idx + 1} (${cluster.slug})
+Title: ${cluster.title}
+Narrative: ${cluster.narrative}
+KeyTakeaways:
+${takeaways || "-"}
+Bridge: ${cluster.bridgeSentence}
+Tags: ${cluster.tags.join(", ") || "general"}`;
+      })
+      .join("\n\n");
+
+    const reducePrompt = MAP_REDUCE_REDUCE_PROMPT
+      .replace("{cluster_briefs}", clusterBriefs)
+      .replace("{digest_date}", context.digestDate || "Today")
+      .replace(
+        "{total_items}",
+        String(context.totalItems ?? clusterSummaries.length)
+      )
+      .replace("{audio_count}", String(context.audioCount ?? 0))
+      .replace("{article_count}", String(context.articleCount ?? 0));
+
     const result = await this.llm.invoke(reducePrompt);
-
     return result.content.toString();
   }
 
@@ -202,7 +540,8 @@ export class MapReduceDigestService {
    * This is simpler but gives less control over prompts
    */
   async generateDigestWithChain(
-    contentItems: DigestContentItem[]
+    contentItems: DigestContentItem[],
+    _context?: DigestNarrativeContext
   ): Promise<string> {
     log.info("Using LangChain built-in map-reduce chain", {
       contentItemCount: contentItems.length,

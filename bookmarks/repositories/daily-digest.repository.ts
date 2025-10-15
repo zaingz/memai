@@ -301,6 +301,7 @@ export class DailyDigestRepository {
         t.transcript,
         t.summary,
         t.deepgram_summary,
+        b.title AS bookmark_title,
         t.duration::numeric::float AS duration,
         t.sentiment,
         t.created_at,
@@ -340,6 +341,7 @@ export class DailyDigestRepository {
         'article' as content_type,
         wc.summary,
         b.source,
+        wc.page_title as title,
         wc.word_count,
         wc.estimated_reading_minutes as reading_minutes,
         wc.created_at
