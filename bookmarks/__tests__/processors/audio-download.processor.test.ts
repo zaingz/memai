@@ -184,7 +184,7 @@ describe("Audio Download Processor", () => {
       });
     });
 
-    it("should process YouTube source (Gemini fallback to TIER 2)", async () => {
+    it("should process YouTube source with Gemini", async () => {
       const event = {
         bookmarkId: 2,
         url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -196,18 +196,21 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("dQw4w9WgXcQ");
-      mockGeminiFailure("dQw4w9WgXcQ");
-      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-2-dQw4w9WgXcQ.mp3");
-      mockPublish.mockResolvedValue("msg-123");
+      mockGeminiSuccess("dQw4w9WgXcQ", "Test transcript");
+      mockUpdateGeminiTranscriptionData.mockResolvedValue(undefined);
+      mockAudioTranscribedPublish.mockResolvedValue("msg-123");
 
       await handleAudioDownload(event);
 
-      expect(mockYouTubeDownloadAndUpload).toHaveBeenCalledWith("dQw4w9WgXcQ", 2);
-      expect(mockPublish).toHaveBeenCalledWith({
+      expect(mockGeminiTranscribeYouTubeVideo).toHaveBeenCalled();
+      expect(mockUpdateGeminiTranscriptionData).toHaveBeenCalledWith(2, {
+        transcript: "Test transcript",
+        confidence: 0.95,
+      });
+      expect(mockAudioTranscribedPublish).toHaveBeenCalledWith({
         bookmarkId: 2,
-        audioBucketKey: "audio-2-dQw4w9WgXcQ.mp3",
+        transcript: "Test transcript",
         source: BookmarkSource.YOUTUBE,
-        metadata: { videoId: "dQw4w9WgXcQ" },
       });
     });
 
@@ -276,16 +279,16 @@ describe("Audio Download Processor", () => {
       });
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("abc123");
-      mockGeminiFailure("abc123");
-      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-5-abc123.mp3");
-      mockPublish.mockResolvedValue("msg-789");
+      mockGeminiSuccess("abc123", "Transcript for abc123");
+      mockUpdateGeminiTranscriptionData.mockResolvedValue(undefined);
+      mockAudioTranscribedPublish.mockResolvedValue("msg-789");
 
       await handleAudioDownload(event);
 
       expect(mockCreatePending).not.toHaveBeenCalled(); // Already exists
       expect(mockMarkAsProcessing).toHaveBeenCalledWith(5);
-      expect(mockYouTubeDownloadAndUpload).toHaveBeenCalled();
-      expect(mockPublish).toHaveBeenCalled();
+      expect(mockGeminiTranscribeYouTubeVideo).toHaveBeenCalled();
+      expect(mockAudioTranscribedPublish).toHaveBeenCalled();
     });
 
     it("should create pending transcription if not exists", async () => {
@@ -299,15 +302,15 @@ describe("Audio Download Processor", () => {
       mockCreatePending.mockResolvedValue(undefined);
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("xyz");
-      mockGeminiFailure("xyz");
-      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-6-xyz.mp3");
-      mockPublish.mockResolvedValue("msg-abc");
+      mockGeminiSuccess("xyz", "Transcript for xyz");
+      mockUpdateGeminiTranscriptionData.mockResolvedValue(undefined);
+      mockAudioTranscribedPublish.mockResolvedValue("msg-abc");
 
       await handleAudioDownload(event);
 
       expect(mockCreatePending).toHaveBeenCalledWith(6);
       expect(mockMarkAsProcessing).toHaveBeenCalledWith(6);
-      expect(mockYouTubeDownloadAndUpload).toHaveBeenCalled();
+      expect(mockGeminiTranscribeYouTubeVideo).toHaveBeenCalled();
     });
   });
 
@@ -387,35 +390,7 @@ describe("Audio Download Processor", () => {
     });
   });
 
-  describe("YouTube Download", () => {
-    it("should extract video ID and call YouTube downloader", async () => {
-      const event = {
-        bookmarkId: 7,
-        url: "https://www.youtube.com/watch?v=videoID123",
-        source: BookmarkSource.YOUTUBE,
-        title: "Video Title",
-      };
-
-      mockFindByBookmarkId.mockResolvedValue(null);
-      mockCreatePending.mockResolvedValue(undefined);
-      mockMarkAsProcessing.mockResolvedValue(undefined);
-      mockExtractYouTubeVideoId.mockReturnValue("videoID123");
-      mockGeminiFailure("videoID123");
-      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-7-videoID123.mp3");
-      mockPublish.mockResolvedValue("msg-def");
-
-      await handleAudioDownload(event);
-
-      expect(mockExtractYouTubeVideoId).toHaveBeenCalledWith(event.url);
-      expect(mockYouTubeDownloadAndUpload).toHaveBeenCalledWith("videoID123", 7);
-      expect(mockPublish).toHaveBeenCalledWith({
-        bookmarkId: 7,
-        audioBucketKey: "audio-7-videoID123.mp3",
-        source: BookmarkSource.YOUTUBE,
-        metadata: { videoId: "videoID123" },
-      });
-    });
-
+  describe("YouTube URL Validation", () => {
     it("should throw error if YouTube URL is invalid", async () => {
       const event = {
         bookmarkId: 8,
@@ -430,33 +405,11 @@ describe("Audio Download Processor", () => {
 
       await handleAudioDownload(event);
 
-      expect(mockYouTubeDownloadAndUpload).not.toHaveBeenCalled();
-      expect(mockPublish).not.toHaveBeenCalled();
+      expect(mockGeminiTranscribeYouTubeVideo).not.toHaveBeenCalled();
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
         8,
         "Audio download failed: Invalid YouTube URL: could not extract video ID"
       );
-    });
-
-    it("should mark as processing before downloading", async () => {
-      const event = {
-        bookmarkId: 9,
-        url: "https://www.youtube.com/watch?v=test",
-        source: BookmarkSource.YOUTUBE,
-      };
-
-      mockFindByBookmarkId.mockResolvedValue(null);
-      mockCreatePending.mockResolvedValue(undefined);
-      mockMarkAsProcessing.mockResolvedValue(undefined);
-      mockExtractYouTubeVideoId.mockReturnValue("test");
-      mockGeminiFailure("test");
-      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-9-test.mp3");
-      mockPublish.mockResolvedValue("msg-ghi");
-
-      await handleAudioDownload(event);
-
-      expect(mockMarkAsProcessing).toHaveBeenCalledWith(9);
-      expect(mockYouTubeDownloadAndUpload).toHaveBeenCalled();
     });
   });
 
@@ -510,132 +463,7 @@ describe("Audio Download Processor", () => {
     });
   });
 
-  describe("Error Handling", () => {
-    it("should clean up bucket on failure after upload", async () => {
-      const event = {
-        bookmarkId: 12,
-        url: "https://www.youtube.com/watch?v=cleanup",
-        source: BookmarkSource.YOUTUBE,
-      };
-
-      mockFindByBookmarkId.mockResolvedValue(null);
-      mockCreatePending.mockResolvedValue(undefined);
-      mockMarkAsProcessing.mockResolvedValue(undefined);
-      mockExtractYouTubeVideoId.mockReturnValue("cleanup");
-      mockGeminiFailure("cleanup");
-      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-12-cleanup.mp3");
-      mockPublish.mockRejectedValue(new Error("Publish failed")); // Fail after upload
-      mockRemove.mockResolvedValue(undefined);
-      mockMarkAsFailed.mockResolvedValue(undefined);
-
-      await handleAudioDownload(event);
-
-      expect(mockRemove).toHaveBeenCalledWith("audio-12-cleanup.mp3");
-      expect(mockMarkAsFailed).toHaveBeenCalledWith(
-        12,
-        "Audio download failed: Publish failed"
-      );
-    });
-
-    it("should mark as failed on download error", async () => {
-      const event = {
-        bookmarkId: 13,
-        url: "https://www.youtube.com/watch?v=error",
-        source: BookmarkSource.YOUTUBE,
-      };
-
-      mockFindByBookmarkId.mockResolvedValue(null);
-      mockCreatePending.mockResolvedValue(undefined);
-      mockMarkAsProcessing.mockResolvedValue(undefined);
-      mockExtractYouTubeVideoId.mockReturnValue("error");
-      mockGeminiFailure("error");
-      mockYouTubeDownloadAndUpload.mockRejectedValue(
-        new Error("Download failed")
-      );
-
-      await handleAudioDownload(event);
-
-      expect(mockPublish).not.toHaveBeenCalled();
-      expect(mockMarkAsFailed).toHaveBeenCalledWith(
-        13,
-        "Audio download failed: Download failed"
-      );
-    });
-
-    it("should not clean up bucket if upload never succeeded", async () => {
-      const event = {
-        bookmarkId: 14,
-        url: "https://www.youtube.com/watch?v=noupload",
-        source: BookmarkSource.YOUTUBE,
-      };
-
-      mockFindByBookmarkId.mockResolvedValue(null);
-      mockCreatePending.mockResolvedValue(undefined);
-      mockMarkAsProcessing.mockResolvedValue(undefined);
-      mockExtractYouTubeVideoId.mockReturnValue("noupload");
-      mockGeminiFailure("noupload");
-      mockYouTubeDownloadAndUpload.mockRejectedValue(
-        new Error("Upload failed")
-      );
-
-      await handleAudioDownload(event);
-
-      expect(mockRemove).not.toHaveBeenCalled(); // No cleanup if upload failed
-      expect(mockMarkAsFailed).toHaveBeenCalled();
-    });
-
-    it("should handle cleanup failure gracefully", async () => {
-      const event = {
-        bookmarkId: 15,
-        url: "https://www.youtube.com/watch?v=cleanupfail",
-        source: BookmarkSource.YOUTUBE,
-      };
-
-      mockFindByBookmarkId.mockResolvedValue(null);
-      mockCreatePending.mockResolvedValue(undefined);
-      mockMarkAsProcessing.mockResolvedValue(undefined);
-      mockExtractYouTubeVideoId.mockReturnValue("cleanupfail");
-      mockGeminiFailure("cleanupfail");
-      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-15-cleanupfail.mp3");
-      mockPublish.mockRejectedValue(new Error("Publish failed"));
-      mockRemove.mockRejectedValue(new Error("Cleanup failed")); // Cleanup fails too
-      mockMarkAsFailed.mockResolvedValue(undefined);
-
-      await handleAudioDownload(event);
-
-      expect(mockRemove).toHaveBeenCalled();
-      expect(mockMarkAsFailed).toHaveBeenCalled(); // Should still mark as failed
-    });
-  });
-
   describe("Event Publishing", () => {
-    it("should publish audio-downloaded event with correct structure", async () => {
-      const event = {
-        bookmarkId: 16,
-        url: "https://www.youtube.com/watch?v=publish",
-        source: BookmarkSource.YOUTUBE,
-        title: "Publish Test",
-      };
-
-      mockFindByBookmarkId.mockResolvedValue(null);
-      mockCreatePending.mockResolvedValue(undefined);
-      mockMarkAsProcessing.mockResolvedValue(undefined);
-      mockExtractYouTubeVideoId.mockReturnValue("publish");
-      mockGeminiFailure("publish");
-      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-16-publish.mp3");
-      mockPublish.mockResolvedValue("msg-mno");
-
-      await handleAudioDownload(event);
-
-      expect(mockPublish).toHaveBeenCalledTimes(1);
-      expect(mockPublish).toHaveBeenCalledWith({
-        bookmarkId: 16,
-        audioBucketKey: "audio-16-publish.mp3",
-        source: BookmarkSource.YOUTUBE,
-        metadata: { videoId: "publish" },
-      });
-    });
-
     it("should include episodeUrl metadata for podcasts", async () => {
       const event = {
         bookmarkId: 17,
@@ -660,117 +488,7 @@ describe("Audio Download Processor", () => {
     });
   });
 
-  describe("Concurrent Processing", () => {
-    it("should handle concurrent download requests", async () => {
-      const events = [
-        {
-          bookmarkId: 18,
-          url: "https://www.youtube.com/watch?v=concurrent1",
-          source: BookmarkSource.YOUTUBE,
-        },
-        {
-          bookmarkId: 19,
-          url: "https://www.youtube.com/watch?v=concurrent2",
-          source: BookmarkSource.YOUTUBE,
-        },
-        {
-          bookmarkId: 20,
-          url: "https://podcast.example.com/ep/20",
-          source: BookmarkSource.PODCAST,
-        },
-      ];
-
-      mockFindByBookmarkId.mockResolvedValue(null);
-      mockCreatePending.mockResolvedValue(undefined);
-      mockMarkAsProcessing.mockResolvedValue(undefined);
-      mockExtractYouTubeVideoId
-        .mockReturnValueOnce("concurrent1")
-        .mockReturnValueOnce("concurrent2");
-      mockBuildYouTubeUrl
-        .mockReturnValueOnce("https://www.youtube.com/watch?v=concurrent1")
-        .mockReturnValueOnce("https://www.youtube.com/watch?v=concurrent2");
-      mockGeminiTranscribeYouTubeVideo
-        .mockResolvedValueOnce({
-          transcript: "",
-          confidence: 0,
-          processingTime: 1000,
-          method: "gemini" as const,
-          error: "Private video",
-        })
-        .mockResolvedValueOnce({
-          transcript: "",
-          confidence: 0,
-          processingTime: 1000,
-          method: "gemini" as const,
-          error: "Private video",
-        });
-      mockYouTubeDownloadAndUpload
-        .mockResolvedValueOnce("audio-18-concurrent1.mp3")
-        .mockResolvedValueOnce("audio-19-concurrent2.mp3");
-      mockPodcastDownloadAndUpload.mockResolvedValueOnce("audio-20-podcast.mp3");
-      mockPublish.mockResolvedValue("msg-concurrent");
-
-      await Promise.all(events.map((event) => handleAudioDownload(event)));
-
-      expect(mockYouTubeDownloadAndUpload).toHaveBeenCalledTimes(2);
-      expect(mockPodcastDownloadAndUpload).toHaveBeenCalledTimes(1);
-      expect(mockPublish).toHaveBeenCalledTimes(3);
-    });
-  });
-
   describe("Logging and Observability", () => {
-    it("should log successful download", async () => {
-      const event = {
-        bookmarkId: 100,
-        url: "https://www.youtube.com/watch?v=logging",
-        source: BookmarkSource.YOUTUBE,
-      };
-
-      mockFindByBookmarkId.mockResolvedValue(null);
-      mockCreatePending.mockResolvedValue(undefined);
-      mockMarkAsProcessing.mockResolvedValue(undefined);
-      mockExtractYouTubeVideoId.mockReturnValue("logging");
-      mockGeminiFailure("logging");
-      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-100-logging.mp3");
-      mockPublish.mockResolvedValue("msg-123");
-
-      await handleAudioDownload(event);
-
-      expect(mockLog.info).toHaveBeenCalledWith(
-        "Audio download completed",
-        expect.objectContaining({
-          bookmarkId: 100,
-          audioBucketKey: "audio-100-logging.mp3",
-        })
-      );
-    });
-
-    it("should log errors when download fails", async () => {
-      const event = {
-        bookmarkId: 101,
-        url: "https://www.youtube.com/watch?v=error",
-        source: BookmarkSource.YOUTUBE,
-      };
-
-      const downloadError = new Error("Download failed");
-      mockFindByBookmarkId.mockResolvedValue(null);
-      mockCreatePending.mockResolvedValue(undefined);
-      mockMarkAsProcessing.mockResolvedValue(undefined);
-      mockExtractYouTubeVideoId.mockReturnValue("error");
-      mockGeminiFailure("error");
-      mockYouTubeDownloadAndUpload.mockRejectedValue(downloadError);
-
-      await handleAudioDownload(event);
-
-      expect(mockLog.error).toHaveBeenCalledWith(
-        downloadError,
-        "Audio download failed",
-        expect.objectContaining({
-          bookmarkId: 101,
-        })
-      );
-    });
-
     it("should log when skipping non-audio sources", async () => {
       const event = {
         bookmarkId: 102,
