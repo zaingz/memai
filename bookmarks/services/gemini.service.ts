@@ -81,23 +81,17 @@ Requirements:
 Return ONLY the transcript, nothing else.`;
 
       // Make API call with timeout
+      // Using the official API format from Google AI documentation
+      // This ensures we're using the Gemini API endpoint, not Vertex AI
       const result = await Promise.race([
-        model.generateContent({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: prompt },
-                {
-                  fileData: {
-                    fileUri: videoUrl,
-                    mimeType: "video/*",
-                  },
-                },
-              ],
+        model.generateContent([
+          prompt,
+          {
+            fileData: {
+              fileUri: videoUrl,
             },
-          ],
-        }),
+          },
+        ]),
         this.createTimeout(GEMINI_CONFIG.timeout),
       ]);
 
@@ -134,12 +128,37 @@ Return ONLY the transcript, nothing else.`;
       const errorMessage = this.parseError(error);
       const errorType = this.classifyError(error);
 
-      log.warn("Gemini transcription failed", {
+      // Enhanced error logging for debugging production issues
+      const errorDetails: Record<string, unknown> = {
         videoId,
-        error: errorMessage,
+        videoUrl,
+        model: GEMINI_CONFIG.model,
+        errorMessage,
         errorType,
         processingTime,
-      });
+      };
+
+      // Capture full error details
+      if (error instanceof Error) {
+        errorDetails.errorName = error.name;
+        errorDetails.errorStack = error.stack;
+
+        // Check for response errors from the API
+        const anyError = error as any;
+        if (anyError.response) {
+          errorDetails.responseStatus = anyError.response.status;
+          errorDetails.responseStatusText = anyError.response.statusText;
+          errorDetails.responseData = JSON.stringify(anyError.response.data || {});
+        }
+        if (anyError.message) {
+          errorDetails.fullErrorMessage = anyError.message;
+        }
+        if (anyError.code) {
+          errorDetails.errorCode = anyError.code;
+        }
+      }
+
+      log.error("Gemini transcription failed - Full error details", errorDetails);
 
       return {
         transcript: "",
