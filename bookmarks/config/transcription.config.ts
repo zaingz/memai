@@ -55,7 +55,7 @@ export const YOUTUBE_URL_PATTERNS = [
 // ============================================
 
 export const GEMINI_CONFIG = {
-  model: "gemini-1.5-flash-latest" as const, // Fast, cost-effective model with API key support
+  model: "gemini-2.5-flash" as const, // Stable Gemini 2.5 Flash with API key support
   maxVideoLength: 7200, // 2 hours max (Gemini limit)
   timeout: 120000, // 2 minutes timeout
   retries: 2, // Retry twice on failure
