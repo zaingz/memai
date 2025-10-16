@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MemAI - Supabase Auth</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+      padding: 40px;
+      width: 100%;
+      max-width: 500px;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .config-section {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+
+    .config-section h2 {
+      font-size: 16px;
+      color: #495057;
+      margin-bottom: 15px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      color: #495057;
+      font-weight: 500;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="password"] {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid #ced4da;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus,
+    input[type="email"]:focus,
+    input[type="password"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #5568d3;
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 30px;
+      border-bottom: 2px solid #e9ecef;
+    }
+
+    .tab {
+      padding: 10px 20px;
+      background: none;
+      border: none;
+      color: #6c757d;
+      cursor: pointer;
+      font-weight: 500;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+    }
+
+    .tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .result {
+      margin-top: 20px;
+      padding: 20px;
+      border-radius: 8px;
+      display: none;
+    }
+
+    .result.success {
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+      color: #155724;
+      display: block;
+    }
+
+    .result.error {
+      background: #f8d7da;
+      border: 1px solid #f5c6cb;
+      color: #721c24;
+      display: block;
+    }
+
+    .result h3 {
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+
+    .token-display {
+      background: #fff;
+      border: 1px solid #c3e6cb;
+      border-radius: 6px;
+      padding: 15px;
+      margin-top: 10px;
+      word-break: break-all;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .copy-button {
+      margin-top: 10px;
+      background: #28a745;
+      padding: 8px 16px;
+      width: auto;
+      font-size: 14px;
+    }
+
+    .copy-button:hover {
+      background: #218838;
+    }
+
+    .info {
+      background: #d1ecf1;
+      border: 1px solid #bee5eb;
+      color: #0c5460;
+      padding: 15px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .info strong {
+      display: block;
+      margin-bottom: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>MemAI Authentication</h1>
+    <p class="subtitle">Sign up or sign in to get your JWT token</p>
+
+    <!-- Configuration Section -->
+    <div class="config-section">
+      <h2>Supabase Configuration</h2>
+      <div class="form-group">
+        <label for="supabase-url">Supabase URL</label>
+        <input type="text" id="supabase-url" value="https://wykjjshvcwfiyvzmvocf.supabase.co">
+      </div>
+      <div class="form-group">
+        <label for="supabase-anon-key">Supabase Anon Key</label>
+        <input type="text" id="supabase-anon-key" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5a2pqc2h2Y3dmaXl2em12b2NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAyNzQ3MzMsImV4cCI6MjA3NTg1MDczM30.DkuzJPjF_r2-UllVfcQv958Z1AOuMWV_-x22vf3IpCc">
+      </div>
+      <button onclick="initializeSupabase()">Initialize Supabase</button>
+    </div>
+
+    <div class="info" id="config-status" style="display: none;">
+      <strong>✓ Supabase Initialized</strong>
+      You can now sign up or sign in.
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" id="auth-tabs" style="display: none;">
+      <button class="tab active" onclick="switchTab('signup')">Sign Up</button>
+      <button class="tab" onclick="switchTab('signin')">Sign In</button>
+    </div>
+
+    <!-- Sign Up Form -->
+    <div id="signup-content" class="tab-content active" style="display: none;">
+      <form onsubmit="handleSignUp(event)">
+        <div class="form-group">
+          <label for="signup-email">Email</label>
+          <input type="email" id="signup-email" required>
+        </div>
+        <div class="form-group">
+          <label for="signup-password">Password (min 6 characters)</label>
+          <input type="password" id="signup-password" required minlength="6">
+        </div>
+        <button type="submit">Sign Up</button>
+      </form>
+    </div>
+
+    <!-- Sign In Form -->
+    <div id="signin-content" class="tab-content" style="display: none;">
+      <form onsubmit="handleSignIn(event)">
+        <div class="form-group">
+          <label for="signin-email">Email</label>
+          <input type="email" id="signin-email" required>
+        </div>
+        <div class="form-group">
+          <label for="signin-password">Password</label>
+          <input type="password" id="signin-password" required>
+        </div>
+        <button type="submit">Sign In</button>
+      </form>
+    </div>
+
+    <!-- Result Display -->
+    <div id="result" class="result"></div>
+  </div>
+
+  <script>
+    let supabase = null;
+
+    function initializeSupabase() {
+      const url = document.getElementById('supabase-url').value.trim();
+      const anonKey = document.getElementById('supabase-anon-key').value.trim();
+
+      if (!url || !anonKey) {
+        showError('Please enter both Supabase URL and Anon Key');
+        return;
+      }
+
+      try {
+        supabase = window.supabase.createClient(url, anonKey);
+        document.getElementById('config-status').style.display = 'block';
+        document.getElementById('auth-tabs').style.display = 'flex';
+        document.getElementById('signup-content').style.display = 'block';
+        showSuccess('Supabase initialized successfully!');
+      } catch (error) {
+        showError('Failed to initialize Supabase: ' + error.message);
+      }
+    }
+
+    function switchTab(tab) {
+      // Update tab buttons
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+
+      // Update tab content
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById(tab + '-content').classList.add('active');
+      document.getElementById(tab + '-content').style.display = 'block';
+
+      if (tab === 'signup') {
+        document.getElementById('signin-content').style.display = 'none';
+      } else {
+        document.getElementById('signup-content').style.display = 'none';
+      }
+
+      // Clear result
+      document.getElementById('result').className = 'result';
+      document.getElementById('result').innerHTML = '';
+    }
+
+    async function handleSignUp(event) {
+      event.preventDefault();
+
+      if (!supabase) {
+        showError('Please initialize Supabase first');
+        return;
+      }
+
+      const email = document.getElementById('signup-email').value;
+      const password = document.getElementById('signup-password').value;
+
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email: email,
+          password: password,
+        });
+
+        if (error) throw error;
+
+        if (data.session) {
+          showToken(data.session.access_token, 'Sign up successful!');
+        } else {
+          showSuccess('Sign up successful! Please check your email to confirm your account.');
+        }
+      } catch (error) {
+        showError('Sign up failed: ' + error.message);
+      }
+    }
+
+    async function handleSignIn(event) {
+      event.preventDefault();
+
+      if (!supabase) {
+        showError('Please initialize Supabase first');
+        return;
+      }
+
+      const email = document.getElementById('signin-email').value;
+      const password = document.getElementById('signin-password').value;
+
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email,
+          password: password,
+        });
+
+        if (error) throw error;
+
+        showToken(data.session.access_token, 'Sign in successful!');
+      } catch (error) {
+        showError('Sign in failed: ' + error.message);
+      }
+    }
+
+    function showToken(token, message) {
+      const resultDiv = document.getElementById('result');
+      resultDiv.className = 'result success';
+      resultDiv.innerHTML = `
+        <h3>${message}</h3>
+        <p>Your JWT Access Token:</p>
+        <div class="token-display" id="token-text">${token}</div>
+        <button class="copy-button" onclick="copyToken()">Copy Token</button>
+        <p style="margin-top: 15px; font-size: 13px;">
+          <strong>Use this token in your API requests:</strong><br>
+          <code style="background: #fff; padding: 5px; border-radius: 4px; display: inline-block; margin-top: 5px;">
+            Authorization: Bearer ${token.substring(0, 30)}...
+          </code>
+        </p>
+      `;
+    }
+
+    function showSuccess(message) {
+      const resultDiv = document.getElementById('result');
+      resultDiv.className = 'result success';
+      resultDiv.innerHTML = `<p>${message}</p>`;
+    }
+
+    function showError(message) {
+      const resultDiv = document.getElementById('result');
+      resultDiv.className = 'result error';
+      resultDiv.innerHTML = `<p><strong>Error:</strong> ${message}</p>`;
+    }
+
+    function copyToken() {
+      const tokenText = document.getElementById('token-text').textContent;
+      navigator.clipboard.writeText(tokenText).then(() => {
+        const button = event.target;
+        const originalText = button.textContent;
+        button.textContent = 'Copied!';
+        setTimeout(() => {
+          button.textContent = originalText;
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>

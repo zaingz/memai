@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import log from "encore.dev/log";
 import { GEMINI_CONFIG } from "../config/transcription.config";
 import { GeminiTranscriptResponse, GeminiErrorType } from "../types/gemini.types";
@@ -6,6 +6,8 @@ import { GeminiTranscriptResponse, GeminiErrorType } from "../types/gemini.types
 /**
  * Gemini Service
  * Handles YouTube video transcription using Google Gemini 2.5 Flash
+ *
+ * Uses the official @google/genai SDK (v1.25.0+)
  *
  * Benefits over yt-dlp + Deepgram:
  * - No audio download required (direct YouTube URL processing)
@@ -16,12 +18,29 @@ import { GeminiTranscriptResponse, GeminiErrorType } from "../types/gemini.types
  * Limitations:
  * - Only works with public YouTube videos
  * - Max 2 hours of video
+ * - Free tier: 8 hours of YouTube video per day
  */
 export class GeminiService {
-  private readonly client: GoogleGenerativeAI;
+  private readonly client: GoogleGenAI;
 
   constructor(apiKey: string) {
-    this.client = new GoogleGenerativeAI(apiKey);
+    // Validate API key
+    if (!apiKey || apiKey.trim() === '') {
+      throw new Error('Gemini API key is empty or undefined');
+    }
+
+    // Log key info for debugging (first/last 4 chars only)
+    const maskedKey = apiKey.length > 8
+      ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}`
+      : '***masked***';
+
+    log.info("Initializing Gemini service", {
+      apiKeyLength: apiKey.length,
+      apiKeyPreview: maskedKey,
+      sdkVersion: "@google/genai v1.25.0",
+    });
+
+    this.client = new GoogleGenAI({ apiKey });
   }
 
   /**
@@ -44,10 +63,6 @@ export class GeminiService {
         model: GEMINI_CONFIG.model,
       });
 
-      const model = this.client.getGenerativeModel({
-        model: GEMINI_CONFIG.model,
-      });
-
       // Create prompt with explicit instructions
       const prompt = `Please provide a complete, accurate transcript of this YouTube video.
 
@@ -62,7 +77,8 @@ Return ONLY the transcript, nothing else.`;
 
       // Make API call with timeout
       const result = await Promise.race([
-        model.generateContent({
+        this.client.models.generateContent({
+          model: GEMINI_CONFIG.model,
           contents: [
             {
               role: "user",
@@ -86,8 +102,7 @@ Return ONLY the transcript, nothing else.`;
         throw new Error(GeminiErrorType.TIMEOUT);
       }
 
-      const response = result.response;
-      const transcript = response.text().trim();
+      const transcript = (result.text || "").trim();
 
       // Validate transcript
       if (!transcript || transcript.length < 10) {

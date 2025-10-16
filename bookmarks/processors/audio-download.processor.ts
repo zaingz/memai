@@ -6,7 +6,6 @@ import { bookmarkSourceClassifiedTopic } from "../events/bookmark-source-classif
 import { audioDownloadedTopic } from "../events/audio-downloaded.events";
 import { audioTranscribedTopic } from "../events/audio-transcribed.events";
 import { BookmarkSourceClassifiedEvent } from "../types";
-import { YouTubeDownloaderService } from "../services/youtube-downloader.service";
 import { PodcastDownloaderService } from "../services/podcast-downloader.service";
 import { GeminiService } from "../services/gemini.service";
 import { TranscriptionRepository } from "../repositories/transcription.repository";
@@ -19,15 +18,15 @@ import { BookmarkSource } from "../types/domain.types";
 const geminiApiKey = secret("GeminiApiKey");
 
 // Initialize services
-const youtubeDownloader = new YouTubeDownloaderService();
 const podcastDownloader = new PodcastDownloaderService();
 const geminiService = new GeminiService(geminiApiKey());
 const transcriptionRepo = new TranscriptionRepository(db);
 
 /**
  * Unified Audio Download Processor
- * Handles audio download for YouTube, Podcast, and future audio sources
- * Uses source field to determine which downloader service to use
+ * Handles audio processing for different sources:
+ * - YouTube: Uses Gemini API for direct transcription (no download)
+ * - Podcast: Downloads audio and processes with Deepgram
  *
  * Exported for testing purposes
  */
@@ -70,53 +69,44 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
     let metadata: Record<string, string> = {};
 
     if (source === BookmarkSource.YOUTUBE) {
-      // YouTube-specific processing with Gemini tier
+      // YouTube-specific processing with Gemini (Gemini ONLY - no fallback)
       const videoId = extractYouTubeVideoId(url);
       if (!videoId) {
         throw new Error("Invalid YouTube URL: could not extract video ID");
       }
 
-      // TIER 1: Try Gemini first (fast, cheap, public videos only)
-      log.info("Attempting Gemini transcription (Tier 1)", { bookmarkId, videoId });
+      log.info("Attempting Gemini transcription", { bookmarkId, videoId });
       const videoUrl = buildYouTubeUrl(videoId);
       const geminiResult = await geminiService.transcribeYouTubeVideo(videoUrl, videoId);
 
-      if (!geminiResult.error) {
-        // SUCCESS: Gemini worked! Store transcript and skip audio download
-        log.info("Gemini transcription successful - skipping audio download", {
-          bookmarkId,
-          videoId,
-          processingTime: geminiResult.processingTime,
-          cost: "$0.02-0.05", // Gemini cost
-        });
-
-        // Store Gemini transcript
-        await transcriptionRepo.updateGeminiTranscriptionData(bookmarkId, {
-          transcript: geminiResult.transcript,
-          confidence: geminiResult.confidence,
-        });
-
-        // Publish directly to audio-transcribed (skip download stage)
-        await audioTranscribedTopic.publish({
-          bookmarkId,
-          transcript: geminiResult.transcript,
-          source,
-        });
-
-        log.info("Published audio-transcribed event (Gemini)", { bookmarkId });
-        return; // Exit early - success!
+      if (geminiResult.error) {
+        // Gemini failed - mark as failed (no fallback)
+        throw new Error(`Gemini transcription failed: ${geminiResult.error}`);
       }
 
-      // TIER 2 (Fallback): Gemini failed, use yt-dlp + Deepgram
-      log.warn("Gemini failed, falling back to yt-dlp + Deepgram (Tier 2)", {
+      // SUCCESS: Gemini worked! Store transcript
+      log.info("Gemini transcription successful", {
         bookmarkId,
         videoId,
-        geminiError: geminiResult.error,
+        processingTime: geminiResult.processingTime,
+        transcriptLength: geminiResult.transcript.length,
       });
 
-      log.info("Downloading YouTube audio", { bookmarkId, videoId });
-      audioBucketKey = await youtubeDownloader.downloadAndUpload(videoId, bookmarkId);
-      metadata = { videoId };
+      // Store Gemini transcript
+      await transcriptionRepo.updateGeminiTranscriptionData(bookmarkId, {
+        transcript: geminiResult.transcript,
+        confidence: geminiResult.confidence,
+      });
+
+      // Publish directly to audio-transcribed event (skip audio download stage)
+      await audioTranscribedTopic.publish({
+        bookmarkId,
+        transcript: geminiResult.transcript,
+        source,
+      });
+
+      log.info("Published audio-transcribed event", { bookmarkId });
+      return; // Exit early - success!
     } else if (source === BookmarkSource.PODCAST) {
       // Podcast-specific download
       log.info("Downloading podcast audio", { bookmarkId, url });

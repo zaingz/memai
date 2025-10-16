@@ -9,6 +9,39 @@ import { audioFilesBucket } from "../storage";
 const exec = promisify(execCallback);
 
 /**
+ * Find yt-dlp binary path
+ * Checks common installation locations in order
+ */
+function findYtDlpPath(): string {
+  const paths = [
+    "/opt/homebrew/bin/yt-dlp", // ARM Mac (M1/M2/M3)
+    "/usr/local/bin/yt-dlp",    // Intel Mac
+    "yt-dlp",                    // Fallback to PATH
+  ];
+
+  for (const path of paths) {
+    try {
+      if (path.startsWith("/") && fs.existsSync(path)) {
+        return path;
+      }
+    } catch {
+      // Skip if can't check existence
+    }
+  }
+
+  // Fallback to just "yt-dlp" and let PATH handle it
+  return "yt-dlp";
+}
+
+const YT_DLP_PATH = findYtDlpPath();
+
+// Log detected path on startup
+log.info("YouTube downloader initialized", {
+  ytDlpPath: YT_DLP_PATH,
+  isFullPath: YT_DLP_PATH.startsWith("/"),
+});
+
+/**
  * Service for downloading YouTube audio and uploading to Encore bucket
  */
 export class YouTubeDownloaderService {
@@ -38,7 +71,7 @@ export class YouTubeDownloaderService {
     try {
       // Download audio to temp file
       const { stdout, stderr } = await exec(
-        `yt-dlp -x --audio-format ${YOUTUBE_CONFIG.audioFormat} --audio-quality ${YOUTUBE_CONFIG.audioQuality} -o "${tempPath}" "${youtubeUrl}"`
+        `${YT_DLP_PATH} -x --audio-format ${YOUTUBE_CONFIG.audioFormat} --audio-quality ${YOUTUBE_CONFIG.audioQuality} -o "${tempPath}" "${youtubeUrl}"`
       );
 
       if (stderr && !stderr.includes("Deleting original file")) {
