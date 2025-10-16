@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import log from "encore.dev/log";
 import { GEMINI_CONFIG } from "../config/transcription.config";
 import { GeminiTranscriptResponse, GeminiErrorType } from "../types/gemini.types";
@@ -7,7 +7,8 @@ import { GeminiTranscriptResponse, GeminiErrorType } from "../types/gemini.types
  * Gemini Service
  * Handles YouTube video transcription using Google Gemini 2.5 Flash
  *
- * Uses the official @google/genai SDK (v1.25.0+)
+ * Uses @google/generative-ai SDK - specifically designed for Gemini Developer API
+ * with API key authentication (not Vertex AI / OAuth2)
  *
  * Benefits over yt-dlp + Deepgram:
  * - No audio download required (direct YouTube URL processing)
@@ -21,7 +22,7 @@ import { GeminiTranscriptResponse, GeminiErrorType } from "../types/gemini.types
  * - Free tier: 8 hours of YouTube video per day
  */
 export class GeminiService {
-  private readonly client: GoogleGenAI;
+  private readonly client: GoogleGenerativeAI;
 
   constructor(apiKey: string) {
     // Validate API key
@@ -37,10 +38,10 @@ export class GeminiService {
     log.info("Initializing Gemini service", {
       apiKeyLength: apiKey.length,
       apiKeyPreview: maskedKey,
-      sdkVersion: "@google/genai v1.25.0",
+      sdkVersion: "@google/generative-ai v0.24.1",
     });
 
-    this.client = new GoogleGenAI({ apiKey });
+    this.client = new GoogleGenerativeAI(apiKey);
   }
 
   /**
@@ -63,6 +64,10 @@ export class GeminiService {
         model: GEMINI_CONFIG.model,
       });
 
+      const model = this.client.getGenerativeModel({
+        model: GEMINI_CONFIG.model,
+      });
+
       // Create prompt with explicit instructions
       const prompt = `Please provide a complete, accurate transcript of this YouTube video.
 
@@ -77,8 +82,7 @@ Return ONLY the transcript, nothing else.`;
 
       // Make API call with timeout
       const result = await Promise.race([
-        this.client.models.generateContent({
-          model: GEMINI_CONFIG.model,
+        model.generateContent({
           contents: [
             {
               role: "user",
@@ -102,7 +106,8 @@ Return ONLY the transcript, nothing else.`;
         throw new Error(GeminiErrorType.TIMEOUT);
       }
 
-      const transcript = (result.text || "").trim();
+      const response = result.response;
+      const transcript = response.text().trim();
 
       // Validate transcript
       if (!transcript || transcript.length < 10) {
