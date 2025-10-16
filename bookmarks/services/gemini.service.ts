@@ -88,6 +88,7 @@ Return ONLY the transcript, nothing else.`;
           prompt,
           {
             fileData: {
+              mimeType: "video/*", // Generic video MIME type for YouTube URLs
               fileUri: videoUrl,
             },
           },
