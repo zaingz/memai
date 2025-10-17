@@ -590,6 +590,54 @@ describe("DailyDigestRepository", () => {
         "Daily digest with id 99999 not found"
       );
     });
+
+    it("should not delete digest when it belongs to different user", async () => {
+      // Setup: Two users
+      const user1Id = randomUUID();
+      const user2Id = randomUUID();
+
+      // Create digest for user1
+      const date = new Date("2025-01-15");
+      const digest = await digestRepo.create({
+        digestDate: date,
+        userId: user1Id,
+        bookmarkCount: 5,
+        sourcesBreakdown: { youtube: 3, web: 2 },
+        dateRangeStart: date,
+        dateRangeEnd: date,
+      });
+
+      // Attempt to delete as user2 (should throw)
+      await expect(
+        digestRepo.delete(digest.id, user2Id)
+      ).rejects.toThrow(/not found for user/);
+
+      // Verify digest still exists
+      const stillExists = await digestRepo.findByDate(date, user1Id);
+      expect(stillExists).toBeDefined();
+      expect(stillExists?.id).toBe(digest.id);
+    });
+
+    it("should delete digest when it belongs to same user", async () => {
+      // Setup
+      const userId = randomUUID();
+      const date = new Date("2025-01-15");
+      const digest = await digestRepo.create({
+        digestDate: date,
+        userId: userId,
+        bookmarkCount: 5,
+        sourcesBreakdown: { youtube: 3, web: 2 },
+        dateRangeStart: date,
+        dateRangeEnd: date,
+      });
+
+      // Delete as same user (should succeed)
+      await digestRepo.delete(digest.id, userId);
+
+      // Verify digest is gone
+      const notFound = await digestRepo.findByDate(date, userId);
+      expect(notFound).toBeNull();
+    });
   });
 
   describe("getCompletedTranscriptionsInRange", () => {

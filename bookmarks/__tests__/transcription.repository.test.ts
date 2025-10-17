@@ -578,6 +578,111 @@ describe("TranscriptionRepository", () => {
     });
   });
 
+  describe("User Ownership", () => {
+    it("should return null when bookmark belongs to different user", async () => {
+      // Setup: Create two users
+      const user1Id = randomUUID();
+      const user2Id = randomUUID();
+
+      // Create bookmark owned by user1
+      const bookmark = await bookmarkRepo.create({
+        user_id: user1Id,
+        url: "https://youtube.com/watch?v=test",
+        title: "User 1 Video",
+        source: BookmarkSource.YOUTUBE,
+        client_time: new Date(),
+        metadata: null,
+      });
+
+      // Create transcription for user1's bookmark
+      await transcriptionRepo.createPending(bookmark.id);
+
+      // Attempt to access as user2 (should return null)
+      const transcription = await transcriptionRepo.findByBookmarkId(
+        bookmark.id,
+        user2Id
+      );
+
+      expect(transcription).toBeNull();
+    });
+
+    it("should return transcription when bookmark belongs to same user", async () => {
+      // Setup
+      const userId = randomUUID();
+      const bookmark = await bookmarkRepo.create({
+        user_id: userId,
+        url: "https://youtube.com/watch?v=test",
+        title: "User Video",
+        source: BookmarkSource.YOUTUBE,
+        client_time: new Date(),
+        metadata: null,
+      });
+
+      await transcriptionRepo.createPending(bookmark.id);
+
+      // Access as same user (should succeed)
+      const transcription = await transcriptionRepo.findByBookmarkId(
+        bookmark.id,
+        userId
+      );
+
+      expect(transcription).toBeDefined();
+      expect(transcription?.bookmark_id).toBe(bookmark.id);
+    });
+
+    it("should return null when transcription's bookmark belongs to different user", async () => {
+      // Setup: Create bookmark and transcription for user1
+      const user1Id = randomUUID();
+      const user2Id = randomUUID();
+
+      const bookmark = await bookmarkRepo.create({
+        user_id: user1Id,
+        url: "https://youtube.com/watch?v=test",
+        title: "User 1 Video",
+        source: BookmarkSource.YOUTUBE,
+        client_time: new Date(),
+        metadata: null,
+      });
+
+      await transcriptionRepo.createPending(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
+      expect(transcription).toBeDefined();
+
+      // Attempt to access by transcription ID as user2
+      const result = await transcriptionRepo.findById(transcription!.id, user2Id);
+
+      expect(result).toBeNull();
+    });
+
+    it("should not delete transcription when bookmark belongs to different user", async () => {
+      // Setup
+      const user1Id = randomUUID();
+      const user2Id = randomUUID();
+
+      const bookmark = await bookmarkRepo.create({
+        user_id: user1Id,
+        url: "https://youtube.com/watch?v=test",
+        title: "User 1 Video",
+        source: BookmarkSource.YOUTUBE,
+        client_time: new Date(),
+        metadata: null,
+      });
+
+      await transcriptionRepo.createPending(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
+      expect(transcription).toBeDefined();
+
+      // Attempt to delete as user2 (should throw)
+      await expect(
+        transcriptionRepo.delete(transcription!.id, user2Id)
+      ).rejects.toThrow(/not found for user/);
+
+      // Verify transcription still exists
+      const stillExists = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
+      expect(stillExists).toBeDefined();
+    });
+  });
+
   describe("integration scenarios", () => {
     // NOTE: Same JSONB limitation as above
     it.skip("should handle full transcription lifecycle", async () => {

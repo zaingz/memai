@@ -1,11 +1,12 @@
 /**
- * Podcast URL Utility Tests
+ * Podcast URL Utility Tests (Property-Based)
  *
  * Tests for podcast-url.util.ts utility functions.
- * Tests podcast URL parsing and RSS feed resolution.
+ * Uses fast-check for property-based testing of podcast URL parsing.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import fc from "fast-check";
 import {
   parsePodcastUrl,
   getApplePodcastRss,
@@ -14,7 +15,7 @@ import {
 // Store original fetch to restore later
 const originalFetch = global.fetch;
 
-describe("podcast-url.util", () => {
+describe("podcast-url.util (Property-Based)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Mock fetch globally
@@ -28,83 +29,110 @@ describe("podcast-url.util", () => {
   });
 
   describe("parsePodcastUrl", () => {
-    it("should parse Apple Podcasts URL and extract show ID", () => {
-      const url = "https://podcasts.apple.com/us/podcast/my-show/id123456789";
-      const info = parsePodcastUrl(url);
+    it("PROPERTY: Google Podcasts base64 round-trip identity", () => {
+      fc.assert(
+        fc.property(
+          fc.webUrl().filter((url) => url.startsWith("http")),
+          (feedUrl) => {
+            // Encode as Google Podcasts URL
+            const encodedFeed = Buffer.from(feedUrl).toString("base64");
+            const googlePodcastsUrl = `https://podcasts.google.com/feed/${encodedFeed}`;
 
-      expect(info.platform).toBe("apple");
-      expect(info.showId).toBe("123456789");
+            // Parse it
+            const info = parsePodcastUrl(googlePodcastsUrl);
+
+            // Should extract original URL
+            return info.platform === "google" && info.feedUrl === feedUrl;
+          }
+        )
+      );
     });
 
-    it("should parse Apple Podcasts URL with episode parameter", () => {
-      const url = "https://podcasts.apple.com/us/podcast/my-show/id123456?i=1000567890";
-      const info = parsePodcastUrl(url);
+    it("PROPERTY: Apple Podcasts ID extraction is deterministic", () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 100000000, max: 999999999 }).map(String),
+          (showId) => {
+            const url = `https://podcasts.apple.com/us/podcast/my-show/id${showId}`;
+            const info1 = parsePodcastUrl(url);
+            const info2 = parsePodcastUrl(url);
 
-      expect(info.platform).toBe("apple");
-      expect(info.showId).toBe("123456");
+            return (
+              info1.platform === "apple" &&
+              info1.showId === showId &&
+              info2.platform === "apple" &&
+              info2.showId === showId &&
+              info1.showId === info2.showId
+            );
+          }
+        )
+      );
     });
 
-    it("should parse Google Podcasts URL and decode base64 feed", () => {
-      // Base64 encode "https://example.com/feed"
-      const encodedFeed = Buffer.from("https://example.com/feed").toString("base64");
-      const url = `https://podcasts.google.com/feed/${encodedFeed}`;
-
-      const info = parsePodcastUrl(url);
-
-      expect(info.platform).toBe("google");
-      expect(info.feedUrl).toBe("https://example.com/feed");
+    it("PROPERTY: RSS feed URLs are preserved exactly", () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.webUrl().map((url) => `${url}.xml`),
+            fc.webUrl().map((url) => `${url}/feed/podcast`),
+            fc.webUrl().map((url) => `${url}/rss/show`)
+          ),
+          (rssUrl) => {
+            const info = parsePodcastUrl(rssUrl);
+            return info.platform === "rss" && info.feedUrl === rssUrl;
+          }
+        )
+      );
     });
 
-    it("should throw error for invalid Google Podcasts base64", () => {
-      const url = "https://podcasts.google.com/feed/invalid-base64!!!";
-
-      expect(() => parsePodcastUrl(url)).toThrow(/Invalid Google Podcasts URL format/);
+    it("PROPERTY: Unknown URLs always return unknown platform", () => {
+      fc.assert(
+        fc.property(
+          fc
+            .webUrl()
+            .filter(
+              (url) =>
+                !url.includes("podcasts.apple.com") &&
+                !url.includes("podcasts.google.com") &&
+                !url.includes(".xml") &&
+                !url.includes("/feed/") &&
+                !url.includes("/rss/")
+            ),
+          (unknownUrl) => {
+            const info = parsePodcastUrl(unknownUrl);
+            return info.platform === "unknown";
+          }
+        )
+      );
     });
 
-    it("should throw error for Google Podcasts with non-URL decoded value", () => {
-      // Base64 encode "not-a-url"
-      const encodedNonUrl = Buffer.from("not-a-url").toString("base64");
-      const url = `https://podcasts.google.com/feed/${encodedNonUrl}`;
-
-      expect(() => parsePodcastUrl(url)).toThrow(/Invalid Google Podcasts URL format/);
-    });
-
-    it("should detect direct RSS feed URL with .xml extension", () => {
-      const url = "https://feeds.example.com/podcast.xml";
-      const info = parsePodcastUrl(url);
-
-      expect(info.platform).toBe("rss");
-      expect(info.feedUrl).toBe(url);
-    });
-
-    it("should detect RSS feed URL with /feed/ path", () => {
-      const url = "https://example.com/feed/podcast";
-      const info = parsePodcastUrl(url);
-
-      expect(info.platform).toBe("rss");
-      expect(info.feedUrl).toBe(url);
-    });
-
-    it("should detect RSS feed URL with /rss/ path", () => {
-      const url = "https://example.com/rss/my-show";
-      const info = parsePodcastUrl(url);
-
-      expect(info.platform).toBe("rss");
-      expect(info.feedUrl).toBe(url);
-    });
-
-    it("should return unknown for unrecognized URL format", () => {
-      const url = "https://example.com/some-page";
-      const info = parsePodcastUrl(url);
-
-      expect(info.platform).toBe("unknown");
-      expect(info.showId).toBeUndefined();
-      expect(info.feedUrl).toBeUndefined();
+    it("PROPERTY: Invalid base64 in Google Podcasts URL throws error", () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 20 }).filter((s) => {
+            try {
+              Buffer.from(s, "base64").toString();
+              return false; // Valid base64, skip
+            } catch {
+              return true; // Invalid base64, use it
+            }
+          }),
+          (invalidBase64) => {
+            const url = `https://podcasts.google.com/feed/${invalidBase64}`;
+            try {
+              parsePodcastUrl(url);
+              return false; // Should have thrown
+            } catch (error: any) {
+              return error.message.includes("Invalid Google Podcasts URL format");
+            }
+          }
+        )
+      );
     });
   });
 
   describe("getApplePodcastRss", () => {
-    it("should fetch RSS feed URL from iTunes API", async () => {
+    it("PROPERTY: Valid iTunes API response returns feedUrl", async () => {
       const mockResponse = {
         resultCount: 1,
         results: [
@@ -183,6 +211,31 @@ describe("podcast-url.util", () => {
       (global.fetch as any).mockRejectedValueOnce(new Error("Network error"));
 
       await expect(getApplePodcastRss("123456789")).rejects.toThrow("Network error");
+    });
+  });
+
+  describe("Edge Cases (Manual)", () => {
+    it("should parse Apple Podcasts URL with episode parameter", () => {
+      const url = "https://podcasts.apple.com/us/podcast/my-show/id123456?i=1000567890";
+      const info = parsePodcastUrl(url);
+
+      expect(info.platform).toBe("apple");
+      expect(info.showId).toBe("123456");
+    });
+
+    it("should detect direct RSS feed URL with .xml extension", () => {
+      const url = "https://feeds.example.com/podcast.xml";
+      const info = parsePodcastUrl(url);
+
+      expect(info.platform).toBe("rss");
+      expect(info.feedUrl).toBe(url);
+    });
+
+    it("should throw error for Google Podcasts with non-URL decoded value", () => {
+      const encodedNonUrl = Buffer.from("not-a-url").toString("base64");
+      const url = `https://podcasts.google.com/feed/${encodedNonUrl}`;
+
+      expect(() => parsePodcastUrl(url)).toThrow(/Invalid Google Podcasts URL format/);
     });
   });
 });

@@ -1,189 +1,157 @@
 /**
- * Bookmark Classifier Utility Tests
+ * Bookmark Classifier Utility Tests (Property-Based)
  *
  * Tests for bookmark-classifier.util.ts utility functions.
- * Tests URL classification logic for different source types.
+ * Uses fast-check for property-based testing to ensure classification consistency.
  */
 
 import { describe, it, expect } from "vitest";
+import fc from "fast-check";
 import { classifyBookmarkUrl } from "../../utils/bookmark-classifier.util";
 import { BookmarkSource } from "../../types";
 
-describe("bookmark-classifier.util", () => {
+describe("bookmark-classifier.util (Property-Based)", () => {
   describe("classifyBookmarkUrl", () => {
-    // YouTube Tests
+    it("PROPERTY: Total function (every URL maps to exactly one source)", () => {
+      fc.assert(
+        fc.property(fc.webUrl(), (url) => {
+          const source = classifyBookmarkUrl(url);
+          const validSources = Object.values(BookmarkSource);
+          return validSources.includes(source);
+        })
+      );
+    });
+
+    it("PROPERTY: Determinism (same URL always produces same classification)", () => {
+      fc.assert(
+        fc.property(fc.webUrl(), (url) => {
+          const source1 = classifyBookmarkUrl(url);
+          const source2 = classifyBookmarkUrl(url);
+          return source1 === source2;
+        })
+      );
+    });
+
+    it("PROPERTY: YouTube patterns always classify as YOUTUBE", () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 11, maxLength: 11 }).filter((s) => /^[A-Za-z0-9_-]+$/.test(s)),
+          (videoId) => {
+            const patterns = [
+              `https://youtube.com/watch?v=${videoId}`,
+              `https://www.youtube.com/watch?v=${videoId}`,
+              `https://youtu.be/${videoId}`,
+              `https://m.youtube.com/watch?v=${videoId}`,
+              `https://www.youtube.com/embed/${videoId}`,
+            ];
+
+            return patterns.every(
+              (url) => classifyBookmarkUrl(url) === BookmarkSource.YOUTUBE
+            );
+          }
+        )
+      );
+    });
+
+    it("PROPERTY: Podcast patterns always classify as PODCAST", () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.constant("https://podcasts.apple.com/us/podcast/test/id123456"),
+            fc.constant("https://feeds.example.com/podcast.xml"),
+            fc.constant("https://example.com/feed/podcast"),
+            fc.constant("https://example.com/rss/show"),
+            fc.constant("https://podcasts.google.com/feed/aHR0cHM6Ly9leGFtcGxlLmNvbS9mZWVk")
+          ),
+          (podcastUrl) => {
+            return classifyBookmarkUrl(podcastUrl) === BookmarkSource.PODCAST;
+          }
+        )
+      );
+    });
+
+    it("PROPERTY: Social media patterns classify to correct source", () => {
+      const testCases = [
+        { pattern: "https://reddit.com/r/test/comments/abc123", expected: BookmarkSource.REDDIT },
+        { pattern: "https://redd.it/abc123", expected: BookmarkSource.REDDIT },
+        { pattern: "https://twitter.com/user/status/123", expected: BookmarkSource.TWITTER },
+        { pattern: "https://x.com/user/status/123", expected: BookmarkSource.TWITTER },
+        { pattern: "https://linkedin.com/posts/user_activity-123", expected: BookmarkSource.LINKEDIN },
+        { pattern: "https://linkedin.com/pulse/article", expected: BookmarkSource.LINKEDIN },
+      ];
+
+      testCases.forEach(({ pattern, expected }) => {
+        expect(classifyBookmarkUrl(pattern)).toBe(expected);
+      });
+    });
+
+    it("PROPERTY: Blog platforms classify as BLOG", () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.constant("https://medium.com/@author/article"),
+            fc.constant("https://newsletter.substack.com/p/article"),
+            fc.constant("https://myblog.wordpress.com/2025/01/article"),
+            fc.constant("https://myblog.blogspot.com/2025/01/article.html"),
+            fc.constant("https://myblog.ghost.io/article"),
+            fc.constant("https://company.com/blog/article"),
+            fc.constant("https://news.example.com/article/story")
+          ),
+          (blogUrl) => {
+            return classifyBookmarkUrl(blogUrl) === BookmarkSource.BLOG;
+          }
+        )
+      );
+    });
+  });
+
+  describe("Specific Classification Tests", () => {
     it("should classify standard YouTube watch URL as YOUTUBE", () => {
-      const url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.YOUTUBE);
+      expect(classifyBookmarkUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).toBe(
+        BookmarkSource.YOUTUBE
+      );
     });
 
-    it("should classify YouTube short URL as YOUTUBE", () => {
-      const url = "https://youtu.be/dQw4w9WgXcQ";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.YOUTUBE);
-    });
-
-    it("should classify YouTube embed URL as YOUTUBE", () => {
-      const url = "https://www.youtube.com/embed/dQw4w9WgXcQ";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.YOUTUBE);
-    });
-
-    // Podcast Tests
     it("should classify Apple Podcasts URL as PODCAST", () => {
-      const url = "https://podcasts.apple.com/us/podcast/test/id123456";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.PODCAST);
+      expect(classifyBookmarkUrl("https://podcasts.apple.com/us/podcast/test/id123456")).toBe(
+        BookmarkSource.PODCAST
+      );
     });
 
-    it("should classify RSS feed URL as PODCAST", () => {
-      const url = "https://feeds.example.com/podcast.xml";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.PODCAST);
-    });
-
-    it("should classify direct RSS feed path as PODCAST", () => {
-      const url = "https://example.com/feed/podcast";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.PODCAST);
-    });
-
-    it("should classify RSS path with /rss/ as PODCAST", () => {
-      const url = "https://example.com/rss/show";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.PODCAST);
-    });
-
-    it("should classify Google Podcasts URL as PODCAST", () => {
-      const url = "https://podcasts.google.com/feed/aHR0cHM6Ly9leGFtcGxlLmNvbS9mZWVk";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.PODCAST);
-    });
-
-    // Reddit Tests
     it("should classify Reddit post URL as REDDIT", () => {
-      const url = "https://www.reddit.com/r/programming/comments/abc123/test";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.REDDIT);
+      expect(
+        classifyBookmarkUrl("https://www.reddit.com/r/programming/comments/abc123/test")
+      ).toBe(BookmarkSource.REDDIT);
     });
 
-    it("should classify short Reddit URL as REDDIT", () => {
-      const url = "https://redd.it/abc123";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.REDDIT);
-    });
-
-    // Twitter/X Tests
     it("should classify Twitter URL as TWITTER", () => {
-      const url = "https://twitter.com/user/status/123456";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.TWITTER);
+      expect(classifyBookmarkUrl("https://twitter.com/user/status/123456")).toBe(
+        BookmarkSource.TWITTER
+      );
     });
 
     it("should classify X.com URL as TWITTER", () => {
-      const url = "https://x.com/user/status/123456";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.TWITTER);
+      expect(classifyBookmarkUrl("https://x.com/user/status/123456")).toBe(BookmarkSource.TWITTER);
     });
 
-    // LinkedIn Tests
     it("should classify LinkedIn post as LINKEDIN", () => {
-      const url = "https://www.linkedin.com/posts/user_activity-123456";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.LINKEDIN);
+      expect(classifyBookmarkUrl("https://www.linkedin.com/posts/user_activity-123456")).toBe(
+        BookmarkSource.LINKEDIN
+      );
     });
 
-    it("should classify LinkedIn article as LINKEDIN", () => {
-      const url = "https://www.linkedin.com/pulse/article-title";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.LINKEDIN);
-    });
-
-    // Blog Platform Tests
     it("should classify Medium article as BLOG", () => {
-      const url = "https://medium.com/@author/article-title";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.BLOG);
+      expect(classifyBookmarkUrl("https://medium.com/@author/article-title")).toBe(
+        BookmarkSource.BLOG
+      );
     });
 
-    it("should classify Substack article as BLOG", () => {
-      const url = "https://newsletter.substack.com/p/article-title";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.BLOG);
-    });
-
-    it("should classify WordPress blog as BLOG", () => {
-      const url = "https://myblog.wordpress.com/2025/01/article";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.BLOG);
-    });
-
-    it("should classify Blogspot URL as BLOG", () => {
-      const url = "https://myblog.blogspot.com/2025/01/article.html";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.BLOG);
-    });
-
-    it("should classify Ghost.io blog as BLOG", () => {
-      const url = "https://myblog.ghost.io/article-title";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.BLOG);
-    });
-
-    it("should classify URL with /blog/ path as BLOG", () => {
-      const url = "https://company.com/blog/article-title";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.BLOG);
-    });
-
-    it("should classify URL with /article/ path as BLOG", () => {
-      const url = "https://news.example.com/article/story-title";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.BLOG);
-    });
-
-    // Web/Default Tests
     it("should classify generic URL as WEB", () => {
-      const url = "https://example.com/page";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.WEB);
-    });
-
-    it("should classify documentation URL as WEB", () => {
-      const url = "https://docs.example.com/guide";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.WEB);
+      expect(classifyBookmarkUrl("https://example.com/page")).toBe(BookmarkSource.WEB);
     });
 
     it("should classify GitHub URL as WEB", () => {
-      const url = "https://github.com/user/repo";
-      const source = classifyBookmarkUrl(url);
-
-      expect(source).toBe(BookmarkSource.WEB);
+      expect(classifyBookmarkUrl("https://github.com/user/repo")).toBe(BookmarkSource.WEB);
     });
   });
 });

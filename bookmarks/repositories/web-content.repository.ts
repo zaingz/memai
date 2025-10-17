@@ -1,12 +1,66 @@
 import { SQLDatabase } from "encore.dev/storage/sqldb";
 import { WebContent, ContentStatus } from "../types";
+import { BaseRepository } from "../../shared/repositories/base.repository";
 
 /**
  * Repository for web_contents table operations
  * Follows the same pattern as TranscriptionRepository for consistency
  */
-export class WebContentRepository {
-  constructor(private readonly db: SQLDatabase) {}
+export class WebContentRepository extends BaseRepository<WebContent> {
+  constructor(db: SQLDatabase) {
+    super(db);
+  }
+
+  /**
+   * Implementation of abstract method: Find web content by ID with user ownership check
+   * Joins with bookmarks table to verify user ownership
+   */
+  protected async findByIdQuery(
+    id: number,
+    userId: string
+  ): Promise<WebContent | null> {
+    return await this.db.queryRow<WebContent>`
+      SELECT wc.*
+      FROM web_contents wc
+      INNER JOIN bookmarks b ON wc.bookmark_id = b.id
+      WHERE wc.id = ${id} AND b.user_id = ${userId}
+    ` || null;
+  }
+
+  /**
+   * Implementation of abstract method: Delete web content with user ownership check
+   */
+  protected async deleteQuery(id: number, userId: string): Promise<void> {
+    const existing = await this.findByIdQuery(id, userId);
+    if (!existing) {
+      throw new Error(`Web content with id ${id} not found for user ${userId}`);
+    }
+
+    await this.db.exec`
+      DELETE FROM web_contents WHERE id = ${id}
+    `;
+  }
+
+  /**
+   * Implementation of abstract method: Update web content status
+   */
+  protected async updateStatus(
+    id: number,
+    status: string,
+    errorMessage: string | null = null
+  ): Promise<void> {
+    const completedStatuses = [ContentStatus.COMPLETED, ContentStatus.FAILED];
+    const shouldSetCompletedAt = completedStatuses.some(s => s === status);
+
+    await this.db.exec`
+      UPDATE web_contents
+      SET
+        status = ${status},
+        error_message = ${errorMessage},
+        processing_completed_at = ${shouldSetCompletedAt ? new Date() : null}
+      WHERE id = ${id}
+    `;
+  }
 
   /**
    * Creates a pending web content record for a bookmark
@@ -21,8 +75,8 @@ export class WebContentRepository {
     `;
 
     if (!row) {
-      // Check if it already exists
-      const existing = await this.findByBookmarkId(bookmarkId);
+      // Check if it already exists (internal query - no user check needed)
+      const existing = await this.findByBookmarkIdInternal(bookmarkId);
       if (existing) {
         return existing;
       }
@@ -33,9 +87,10 @@ export class WebContentRepository {
   }
 
   /**
-   * Marks web content as processing
+   * Marks web content as processing by bookmark ID
+   * Domain-specific helper method for backward compatibility
    */
-  async markAsProcessing(bookmarkId: number): Promise<void> {
+  async markAsProcessingByBookmarkId(bookmarkId: number): Promise<void> {
     await this.db.exec`
       UPDATE web_contents
       SET
@@ -90,9 +145,10 @@ export class WebContentRepository {
   }
 
   /**
-   * Marks web content as completed
+   * Marks web content as completed by bookmark ID
+   * Domain-specific helper method for backward compatibility
    */
-  async markAsCompleted(bookmarkId: number): Promise<void> {
+  async markAsCompletedByBookmarkId(bookmarkId: number): Promise<void> {
     await this.db.exec`
       UPDATE web_contents
       SET
@@ -103,9 +159,10 @@ export class WebContentRepository {
   }
 
   /**
-   * Marks web content as failed with error message
+   * Marks web content as failed with error message by bookmark ID
+   * Domain-specific helper method for backward compatibility
    */
-  async markAsFailed(bookmarkId: number, errorMessage: string): Promise<void> {
+  async markAsFailedByBookmarkId(bookmarkId: number, errorMessage: string): Promise<void> {
     await this.db.exec`
       UPDATE web_contents
       SET
@@ -117,9 +174,27 @@ export class WebContentRepository {
   }
 
   /**
-   * Finds web content by bookmark ID
+   * Finds web content by bookmark ID with user ownership verification
+   * Joins with bookmarks table to ensure user owns the bookmark (defense in depth)
+   *
+   * @param bookmarkId - Bookmark ID to find web content for
+   * @param userId - User ID to verify ownership
+   * @returns WebContent if found and owned by user, null otherwise
    */
-  async findByBookmarkId(bookmarkId: number): Promise<WebContent | null> {
+  async findByBookmarkId(bookmarkId: number, userId: string): Promise<WebContent | null> {
+    return await this.db.queryRow<WebContent>`
+      SELECT wc.*
+      FROM web_contents wc
+      INNER JOIN bookmarks b ON wc.bookmark_id = b.id
+      WHERE wc.bookmark_id = ${bookmarkId} AND b.user_id = ${userId}
+    ` || null;
+  }
+
+  /**
+   * Finds web content by bookmark ID without user ownership check
+   * Used for internal operations where user context is not available (e.g., processors)
+   */
+  async findByBookmarkIdInternal(bookmarkId: number): Promise<WebContent | null> {
     return await this.db.queryRow<WebContent>`
       SELECT * FROM web_contents
       WHERE bookmark_id = ${bookmarkId}
@@ -127,9 +202,10 @@ export class WebContentRepository {
   }
 
   /**
-   * Finds web content by ID
+   * Finds web content by ID without user ownership check
+   * Used for internal operations where user context is not available
    */
-  async findById(id: number): Promise<WebContent | null> {
+  async findByIdInternal(id: number): Promise<WebContent | null> {
     return await this.db.queryRow<WebContent>`
       SELECT * FROM web_contents
       WHERE id = ${id}
@@ -137,25 +213,35 @@ export class WebContentRepository {
   }
 
   /**
-   * Lists all web content with pagination
+   * Lists web content with pagination and user filtering
+   * Joins with bookmarks table to filter by user ownership
+   *
+   * @param params - List parameters including userId for filtering
+   * @returns Array of web content owned by the user
    */
   async list(params: {
+    userId: string;
     limit: number;
     offset: number;
     status?: ContentStatus;
   }): Promise<WebContent[]> {
-    const { limit, offset, status } = params;
+    const { userId, limit, offset, status } = params;
 
     const query = status
       ? this.db.query<WebContent>`
-          SELECT * FROM web_contents
-          WHERE status = ${status}
-          ORDER BY created_at DESC
+          SELECT wc.*
+          FROM web_contents wc
+          INNER JOIN bookmarks b ON wc.bookmark_id = b.id
+          WHERE wc.status = ${status} AND b.user_id = ${userId}
+          ORDER BY wc.created_at DESC
           LIMIT ${limit} OFFSET ${offset}
         `
       : this.db.query<WebContent>`
-          SELECT * FROM web_contents
-          ORDER BY created_at DESC
+          SELECT wc.*
+          FROM web_contents wc
+          INNER JOIN bookmarks b ON wc.bookmark_id = b.id
+          WHERE b.user_id = ${userId}
+          ORDER BY wc.created_at DESC
           LIMIT ${limit} OFFSET ${offset}
         `;
 

@@ -1,7 +1,7 @@
 import { api, APIError } from "encore.dev/api";
-import { getAuthData } from "~encore/auth";
 import log from "encore.dev/log";
 import { db } from "./db";
+import { withAuth, validateRequired, validatePagination, validateAtLeastOne } from "../shared/middleware";
 import {
   CreateBookmarkRequest,
   BookmarkResponse,
@@ -61,25 +61,16 @@ function toTranscriptionDetails(t: Transcription): TranscriptionDetails {
 // CREATE - Add a new bookmark
 export const create = api(
   { expose: true, method: "POST", path: "/bookmarks", auth: true },
-  async (req: CreateBookmarkRequest): Promise<BookmarkResponse> => {
-    // Get authenticated user
-    const auth = getAuthData();
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-    const userId = auth.userID; // UUID from Supabase JWT
-
+  withAuth(async (req: CreateBookmarkRequest, auth): Promise<BookmarkResponse> => {
     // Validate required fields
-    if (!req.url || !req.client_time) {
-      throw APIError.invalidArgument("url and client_time are required");
-    }
+    validateRequired(req, ["url", "client_time"], "bookmark creation");
 
     // Default source to 'web' if not provided (triggers auto-classification)
     const source = req.source || BookmarkSource.WEB;
 
     // Create the bookmark
     const bookmark = await bookmarkRepo.create({
-      user_id: userId,
+      user_id: auth.userID,
       url: req.url,
       title: req.title || null,
       source,
@@ -115,24 +106,20 @@ export const create = api(
     }
 
     return { bookmark };
-  }
+  })
 );
 
 // READ - Get a bookmark by ID
 export const get = api(
   { expose: true, method: "GET", path: "/bookmarks/:id", auth: true },
-  async (req: GetBookmarkRequest): Promise<BookmarkResponse> => {
-    // Get authenticated user
+  async ({ id }: GetBookmarkRequest): Promise<BookmarkResponse> => {
+    const { getAuthData } = await import("~encore/auth");
     const auth = getAuthData();
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-    const userId = auth.userID; // UUID from Supabase JWT
 
-    const bookmark = await bookmarkRepo.findById(req.id, userId);
+    const bookmark = await bookmarkRepo.findById(id, auth.userID);
 
     if (!bookmark) {
-      throw APIError.notFound(`Bookmark with id ${req.id} not found`);
+      throw APIError.notFound(`Bookmark with id ${id} not found`);
     }
 
     return { bookmark };
@@ -142,50 +129,31 @@ export const get = api(
 // LIST - Get all bookmarks with pagination and filtering
 export const list = api(
   { expose: true, method: "GET", path: "/bookmarks", auth: true },
-  async (req: ListBookmarksRequest): Promise<ListBookmarksResponse> => {
-    // Get authenticated user
-    const auth = getAuthData();
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-    const userId = auth.userID; // UUID from Supabase JWT
-
-    const limit = req.limit || 50;
-    const offset = req.offset || 0;
+  withAuth(async (req: ListBookmarksRequest, auth): Promise<ListBookmarksResponse> => {
+    const { limit, offset } = validatePagination(req);
 
     const { bookmarks, total } = await bookmarkRepo.list({
-      userId,
+      userId: auth.userID,
       limit,
       offset,
       source: req.source as BookmarkSource | undefined,
     });
 
     return { bookmarks, total };
-  }
+  })
 );
 
 // UPDATE - Update a bookmark
 export const update = api(
   { expose: true, method: "PUT", path: "/bookmarks/:id", auth: true },
   async (req: UpdateBookmarkRequest): Promise<BookmarkResponse> => {
-    // Get authenticated user
+    const { getAuthData } = await import("~encore/auth");
     const auth = getAuthData();
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-    const userId = auth.userID; // UUID from Supabase JWT
 
     // Validate that at least one field is provided
-    if (
-      req.url === undefined &&
-      req.title === undefined &&
-      req.source === undefined &&
-      req.metadata === undefined
-    ) {
-      throw APIError.invalidArgument("No fields to update");
-    }
+    validateAtLeastOne(req, ["url", "title", "source", "metadata"], "update");
 
-    const bookmark = await bookmarkRepo.update(req.id, userId, {
+    const bookmark = await bookmarkRepo.update(req.id, auth.userID, {
       url: req.url,
       title: req.title,
       source: req.source,
@@ -199,15 +167,11 @@ export const update = api(
 // DELETE - Delete a bookmark
 export const remove = api(
   { expose: true, method: "DELETE", path: "/bookmarks/:id", auth: true },
-  async (req: DeleteBookmarkRequest): Promise<DeleteBookmarkResponse> => {
-    // Get authenticated user
+  async ({ id }: DeleteBookmarkRequest): Promise<DeleteBookmarkResponse> => {
+    const { getAuthData } = await import("~encore/auth");
     const auth = getAuthData();
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-    const userId = auth.userID; // UUID from Supabase JWT
 
-    await bookmarkRepo.delete(req.id, userId);
+    await bookmarkRepo.delete(id, auth.userID);
     return { success: true };
   }
 );
@@ -215,26 +179,23 @@ export const remove = api(
 // GET DETAILS - Get a bookmark with all enriched data (transcription, etc.)
 export const getDetails = api(
   { expose: true, method: "GET", path: "/bookmarks/:id/details", auth: true },
-  async (req: GetBookmarkDetailsRequest): Promise<BookmarkDetailsResponse> => {
-    // Get authenticated user
+  async ({ id }: GetBookmarkDetailsRequest): Promise<BookmarkDetailsResponse> => {
+    const { getAuthData } = await import("~encore/auth");
     const auth = getAuthData();
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-    const userId = auth.userID; // UUID from Supabase JWT
 
     // Fetch the bookmark
-    const bookmark = await bookmarkRepo.findById(req.id, userId);
+    const bookmark = await bookmarkRepo.findById(id, auth.userID);
 
     if (!bookmark) {
-      throw APIError.notFound(`Bookmark with id ${req.id} not found`);
+      throw APIError.notFound(`Bookmark with id ${id} not found`);
     }
 
-    // Fetch transcription if it exists (only relevant for YouTube bookmarks)
-    const transcription = await transcriptionRepo.findByBookmarkId(req.id);
+    // Fetch transcription if it exists (only relevant for YouTube/podcast bookmarks)
+    // Defense in depth: verify user ownership in transcription query too
+    const transcription = await transcriptionRepo.findByBookmarkId(id, auth.userID);
 
     log.info("Fetched bookmark details", {
-      bookmarkId: req.id,
+      bookmarkId: id,
       source: bookmark.source,
       hasTranscription: !!transcription,
     });
@@ -254,14 +215,7 @@ export const getDetails = api(
 // (Used for manual triggering with optional date parameter)
 export const generateDailyDigest = api(
   { expose: true, method: "POST", path: "/digests/generate", auth: true },
-  async (req?: GenerateDailyDigestRequest): Promise<GenerateDailyDigestResponse> => {
-    // Get authenticated user
-    const auth = getAuthData();
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-    const userId = auth.userID; // UUID from Supabase JWT
-
+  withAuth(async (req: GenerateDailyDigestRequest | undefined, auth): Promise<GenerateDailyDigestResponse> => {
     // Determine the date for digest generation
     // If date is provided, use it; otherwise use yesterday
     let digestDate: Date;
@@ -280,13 +234,13 @@ export const generateDailyDigest = api(
 
     log.info("Generating daily digest", {
       digestDate: digestDate.toISOString().split("T")[0],
-      userId,
+      userId: auth.userID,
     });
 
     try {
       const digest = await dailyDigestService.generateDailyDigest({
         date: digestDate,
-        userId,
+        userId: auth.userID,
         forceRegenerate: false,
       });
 
@@ -307,42 +261,38 @@ export const generateDailyDigest = api(
         }`
       );
     }
-  }
+  })
 );
 
 // GET DAILY DIGEST - Get digest for a specific date
 export const getDailyDigest = api(
   { expose: true, method: "GET", path: "/digests/:date", auth: true },
-  async (req: GetDailyDigestRequest): Promise<GetDailyDigestResponse> => {
-    // Get authenticated user
+  async ({ date }: GetDailyDigestRequest): Promise<GetDailyDigestResponse> => {
+    const { getAuthData } = await import("~encore/auth");
     const auth = getAuthData();
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-    const userId = auth.userID; // UUID from Supabase JWT
 
     let digestDate: Date;
 
     try {
-      digestDate = parseDigestDate(req.date);
+      digestDate = parseDigestDate(date);
     } catch (error) {
       throw APIError.invalidArgument("Invalid date format. Use YYYY-MM-DD");
     }
 
     log.info("Fetching daily digest", {
-      digestDate: req.date,
-      userId,
+      digestDate: date,
+      userId: auth.userID,
     });
 
     const digest = await dailyDigestService.getDigestByDate(
       digestDate,
-      userId
+      auth.userID
     );
 
     if (!digest) {
       log.info("Daily digest not found", {
-        digestDate: req.date,
-        userId,
+        digestDate: date,
+        userId: auth.userID,
       });
     }
 
@@ -353,31 +303,23 @@ export const getDailyDigest = api(
 // LIST DAILY DIGESTS - List all digests with pagination
 export const listDailyDigests = api(
   { expose: true, method: "GET", path: "/digests", auth: true },
-  async (req: ListDailyDigestsRequest): Promise<ListDailyDigestsResponse> => {
-    // Get authenticated user
-    const auth = getAuthData();
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-    const userId = auth.userID; // UUID from Supabase JWT
-
-    const limit = req.limit || 30;
-    const offset = req.offset || 0;
+  withAuth(async (req: ListDailyDigestsRequest, auth): Promise<ListDailyDigestsResponse> => {
+    const { limit, offset } = validatePagination(req);
 
     log.info("Listing daily digests", {
       limit,
       offset,
-      userId,
+      userId: auth.userID,
     });
 
     const { digests, total } = await dailyDigestService.listDigests({
       limit,
       offset,
-      userId,
+      userId: auth.userID,
     });
 
     return { digests, total };
-  }
+  })
 );
 
 // CRON JOB ENDPOINT - Generate yesterday's digest for ALL users

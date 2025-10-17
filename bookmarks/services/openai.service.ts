@@ -55,15 +55,24 @@ export class OpenAIService {
     });
 
     try {
-      const response = await this.client.responses.create({
-        model: OPENAI_CONFIG.model,
-        instructions,
-        input: `Please provide a concise summary:\n\n${content}`,
-        temperature: OPENAI_CONFIG.temperature,
-        max_output_tokens: maxTokens,
-      });
+      // Make API call with timeout (following Gemini service pattern)
+      const result = await Promise.race([
+        this.client.responses.create({
+          model: OPENAI_CONFIG.model,
+          instructions,
+          input: `Please provide a concise summary:\n\n${content}`,
+          temperature: OPENAI_CONFIG.temperature,
+          max_output_tokens: maxTokens,
+        }),
+        this.createTimeout(OPENAI_CONFIG.timeout),
+      ]);
 
-      const summary = response.output_text || "No summary available";
+      // Check if timeout occurred
+      if (result === "TIMEOUT") {
+        throw new Error("OpenAI API request timed out after 30 seconds");
+      }
+
+      const summary = result.output_text || "No summary available";
 
       log.info("Summary generated successfully", {
         contentLength: content.length,
@@ -113,6 +122,16 @@ export class OpenAIService {
   }
 
   /**
+   * Creates a timeout promise
+   * Follows the Gemini service pattern for consistent timeout handling
+   */
+  private createTimeout(ms: number): Promise<"TIMEOUT"> {
+    return new Promise((resolve) => {
+      setTimeout(() => resolve("TIMEOUT"), ms);
+    });
+  }
+
+  /**
    * Generates a daily digest from prompt and content
    * Used for Tier 1 (simple concatenation) and Tier 2 (reduce phase)
    * @param prompt - The formatted prompt with instructions
@@ -131,15 +150,24 @@ export class OpenAIService {
     });
 
     try {
-      const response = await this.client.responses.create({
-        model: DAILY_DIGEST_CONFIG.openaiModel,
-        instructions: prompt,
-        input: content,
-        temperature: DAILY_DIGEST_CONFIG.temperature,
-        max_output_tokens: tokensToUse,
-      });
+      // Make API call with timeout (following Gemini service pattern)
+      const result = await Promise.race([
+        this.client.responses.create({
+          model: DAILY_DIGEST_CONFIG.openaiModel,
+          instructions: prompt,
+          input: content,
+          temperature: DAILY_DIGEST_CONFIG.temperature,
+          max_output_tokens: tokensToUse,
+        }),
+        this.createTimeout(OPENAI_CONFIG.timeout),
+      ]);
 
-      const digest = response.output_text || "No digest generated";
+      // Check if timeout occurred
+      if (result === "TIMEOUT") {
+        throw new Error("OpenAI API request timed out after 30 seconds");
+      }
+
+      const digest = result.output_text || "No digest generated";
 
       log.info("Daily digest generated successfully", {
         digestLength: digest.length,

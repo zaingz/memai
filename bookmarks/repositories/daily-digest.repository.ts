@@ -8,12 +8,72 @@ import {
   BookmarkSource,
   DigestContentItem,
 } from "../types";
+import { BaseRepository } from "../../shared/repositories/base.repository";
 
 /**
  * Repository for daily digest database operations
  */
-export class DailyDigestRepository {
-  constructor(private readonly db: SQLDatabase) {}
+export class DailyDigestRepository extends BaseRepository<DailyDigest> {
+  constructor(db: SQLDatabase) {
+    super(db);
+  }
+
+  /**
+   * Implementation of abstract method: Find digest by ID with user ownership check
+   */
+  protected async findByIdQuery(
+    id: number,
+    userId: string
+  ): Promise<DailyDigest | null> {
+    const row = await this.db.queryRow<Omit<DailyDigest, 'sources_breakdown' | 'processing_metadata'>>`
+      SELECT
+        id, digest_date, user_id, status, bookmark_count,
+        date_range_start, date_range_end, digest_content, total_duration,
+        error_message, processing_started_at, processing_completed_at, created_at, updated_at
+      FROM daily_digests
+      WHERE id = ${id} AND user_id = ${userId}
+    `;
+    return row ? {
+      ...row,
+      sources_breakdown: null,
+      processing_metadata: null
+    } as DailyDigest : null;
+  }
+
+  /**
+   * Implementation of abstract method: Delete digest with user ownership check
+   */
+  protected async deleteQuery(id: number, userId: string): Promise<void> {
+    const existing = await this.findByIdQuery(id, userId);
+    if (!existing) {
+      throw new Error(`Daily digest with id ${id} not found for user ${userId}`);
+    }
+
+    await this.db.exec`
+      DELETE FROM daily_digests WHERE id = ${id}
+    `;
+  }
+
+  /**
+   * Implementation of abstract method: Update digest status
+   */
+  protected async updateStatus(
+    id: number,
+    status: string,
+    errorMessage: string | null = null
+  ): Promise<void> {
+    const completedStatuses = [DigestStatus.COMPLETED, DigestStatus.FAILED];
+    const shouldSetCompletedAt = completedStatuses.some(s => s === status);
+
+    await this.db.exec`
+      UPDATE daily_digests
+      SET
+        status = ${status},
+        error_message = ${errorMessage},
+        processing_completed_at = ${shouldSetCompletedAt ? new Date() : null}
+      WHERE id = ${id}
+    `;
+  }
 
   /**
    * Creates a new daily digest record with pending status
@@ -180,9 +240,10 @@ export class DailyDigestRepository {
   }
 
   /**
-   * Updates digest status
+   * Updates digest status with optional error message
+   * Domain-specific method that supports DigestStatus enum
    */
-  async updateStatus(
+  async updateDigestStatus(
     id: number,
     status: DigestStatus,
     errorMessage?: string
@@ -198,22 +259,10 @@ export class DailyDigestRepository {
   }
 
   /**
-   * Marks digest as processing
+   * Marks digest as completed with content and metadata
+   * Domain-specific method for digest completion
    */
-  async markAsProcessing(id: number): Promise<void> {
-    await this.db.exec`
-      UPDATE daily_digests
-      SET
-        status = 'processing',
-        processing_started_at = NOW()
-      WHERE id = ${id}
-    `;
-  }
-
-  /**
-   * Marks digest as completed with content
-   */
-  async markAsCompleted(
+  async markAsCompletedWithContent(
     id: number,
     content: string | null,
     totalDuration: number | null,
@@ -226,20 +275,6 @@ export class DailyDigestRepository {
         digest_content = ${content},
         total_duration = ${totalDuration},
         processing_metadata = ${metadata},
-        processing_completed_at = NOW()
-      WHERE id = ${id}
-    `;
-  }
-
-  /**
-   * Marks digest as failed with error message
-   */
-  async markAsFailed(id: number, errorMessage: string): Promise<void> {
-    await this.db.exec`
-      UPDATE daily_digests
-      SET
-        status = 'failed',
-        error_message = ${errorMessage},
         processing_completed_at = NOW()
       WHERE id = ${id}
     `;
@@ -263,9 +298,10 @@ export class DailyDigestRepository {
   }
 
   /**
-   * Deletes a digest by ID
+   * Deletes a digest by ID without user ownership check
+   * Used for internal operations where user context is not available
    */
-  async delete(id: number): Promise<void> {
+  async deleteInternal(id: number): Promise<void> {
     const existing = await this.db.queryRow<{ id: number }>`
       SELECT id FROM daily_digests WHERE id = ${id}
     `;

@@ -2,24 +2,24 @@
  * API Handler Tests
  *
  * Tests the business logic of API endpoints by calling handlers directly.
- * This avoids transaction isolation issues by using direct DB operations for setup.
+ * Uses webhook calls for user creation to avoid transaction isolation issues.
  *
  * Architecture:
- * - Setup: Direct DB writes (userRepo.create)
+ * - Setup: Webhook calls (userCreated) to create users (commits immediately)
  * - Test: Import and call API handler functions with mock auth
- * - No service-to-service calls, no transaction isolation
+ * - Avoids transaction isolation between setup and test
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { APIError } from "encore.dev/api";
 import { db } from "../db";
 import { UserRepository } from "../repositories/user.repository";
-import { createTestUser, TEST_USERS } from "../../test/utils/test-data.factory";
+import { createTestUser, TEST_USERS, createCustomAccessTokenHookPayload } from "../../test/utils/test-data.factory";
 import { clearUsersTable } from "../../test/utils/database.util";
 import * as usersTestClient from "../../encore.gen/internal/clients/users/endpoints_testing";
-import { generateTestJWT } from "../../test/utils/jwt-generator.util";
-import type { CallOpts } from "encore.dev/api";
-import { decodeJwt } from "jose";
+import { createAuthOpts } from "../../test/utils/api-test.factory";
+import { userCreated } from "../webhooks";
+import { randomUUID } from "crypto";
 
 describe("API Handlers - Business Logic", () => {
   const userRepo = new UserRepository(db);
@@ -32,33 +32,20 @@ describe("API Handlers - Business Logic", () => {
     await clearUsersTable(db);
   });
 
-  /**
-   * Helper to create auth CallOpts from JWT token
-   * This simulates the auth context without requiring service infrastructure
-   */
-  function createAuthOpts(token: string): CallOpts {
-    const payload = decodeJwt(token);
-    return {
-      authData: {
-        userID: payload.sub || "",
-        email: (payload.email as string) || "",
-      },
-    };
-  }
-
   describe("GET /users/me - Handler Logic", () => {
     it("should return user profile for authenticated user", async () => {
-      // Setup: Create user via direct DB write (test fixture)
+      // Setup: Create user via webhook (commits immediately)
       const user = TEST_USERS.primary;
-      await userRepo.create({
-        id: user.id,
-        email: user.email,
-        name: user.name ?? undefined,
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user.id,
+          email: user.email,
+          user_metadata: { name: user.name ?? "Test User" },
+        })
+      );
 
       // Execute: Call handler with mock auth context
-      const token = await generateTestJWT(user.id, user.email);
-      const result = await usersTestClient.me(undefined, createAuthOpts(token));
+      const result = await usersTestClient.me(undefined, createAuthOpts(user.id, user.email));
 
       // Assert: Handler returns correct data
       expect(result.user.id).toBe(user.id);
@@ -72,46 +59,45 @@ describe("API Handlers - Business Logic", () => {
     it("should throw not_found error when user not found in database", async () => {
       // Execute: Call handler for non-existent user
       const nonExistentUserId = "99999999-9999-9999-9999-999999999999";
-      const token = await generateTestJWT(
-        nonExistentUserId,
-        "nonexistent@test.com"
-      );
+      const nonExistentEmail = "nonexistent@test.com";
 
       // Assert: Handler throws not_found error
       await expect(
-        usersTestClient.me(undefined, createAuthOpts(token))
+        usersTestClient.me(undefined, createAuthOpts(nonExistentUserId, nonExistentEmail))
       ).rejects.toMatchObject({ code: "not_found" });
     });
 
     it("should handle user with null name", async () => {
-      // Setup: Create user without name
+      // Setup: Create user without name via webhook
       const user = createTestUser({ name: null });
-      await userRepo.create({
-        id: user.id,
-        email: user.email,
-        name: undefined,
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user.id,
+          email: user.email,
+          user_metadata: {}, // No name
+        })
+      );
 
       // Execute: Call handler
-      const token = await generateTestJWT(user.id, user.email);
-      const result = await usersTestClient.me(undefined, createAuthOpts(token));
+      const result = await usersTestClient.me(undefined, createAuthOpts(user.id, user.email));
 
       // Assert: Name is null
       expect(result.user.name).toBeNull();
     });
 
     it("should not return password_hash field (SafeUser)", async () => {
-      // Setup: Create user
+      // Setup: Create user via webhook
       const user = TEST_USERS.primary;
-      await userRepo.create({
-        id: user.id,
-        email: user.email,
-        name: user.name ?? undefined,
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user.id,
+          email: user.email,
+          user_metadata: { name: user.name ?? "Test User" },
+        })
+      );
 
       // Execute: Call handler
-      const token = await generateTestJWT(user.id, user.email);
-      const result = await usersTestClient.me(undefined, createAuthOpts(token));
+      const result = await usersTestClient.me(undefined, createAuthOpts(user.id, user.email));
 
       // Assert: SafeUser doesn't include password_hash
       expect((result.user as any).password_hash).toBeUndefined();
@@ -120,19 +106,20 @@ describe("API Handlers - Business Logic", () => {
 
   describe("PATCH /users/me - Handler Logic", () => {
     it("should update user name", async () => {
-      // Setup: Create user with old name
+      // Setup: Create user with old name via webhook
       const user = createTestUser({ name: "Old Name" });
-      await userRepo.create({
-        id: user.id,
-        email: user.email,
-        name: "Old Name",
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user.id,
+          email: user.email,
+          user_metadata: { name: "Old Name" },
+        })
+      );
 
       // Execute: Call handler to update name
-      const token = await generateTestJWT(user.id, user.email);
       const result = await usersTestClient.updateProfile(
         { name: "New Name" },
-        createAuthOpts(token)
+        createAuthOpts(user.id, user.email)
       );
 
       // Assert: Name was updated
@@ -142,19 +129,20 @@ describe("API Handlers - Business Logic", () => {
     });
 
     it("should update name to null", async () => {
-      // Setup: Create user with name
+      // Setup: Create user with name via webhook
       const user = createTestUser({ name: "Has Name" });
-      await userRepo.create({
-        id: user.id,
-        email: user.email,
-        name: "Has Name",
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user.id,
+          email: user.email,
+          user_metadata: { name: "Has Name" },
+        })
+      );
 
       // Execute: Call handler to set name to null
-      const token = await generateTestJWT(user.id, user.email);
       const result = await usersTestClient.updateProfile(
         { name: null },
-        createAuthOpts(token)
+        createAuthOpts(user.id, user.email)
       );
 
       // Assert: Name is now null
@@ -162,31 +150,33 @@ describe("API Handlers - Business Logic", () => {
     });
 
     it("should throw invalid_argument error when no fields provided", async () => {
-      // Setup: Create user
+      // Setup: Create user via webhook
       const user = TEST_USERS.primary;
-      await userRepo.create({
-        id: user.id,
-        email: user.email,
-        name: user.name ?? undefined,
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user.id,
+          email: user.email,
+          user_metadata: { name: user.name ?? "Test User" },
+        })
+      );
 
       // Execute: Call handler with empty update
-      const token = await generateTestJWT(user.id, user.email);
-
       // Assert: Handler throws invalid_argument error
       await expect(
-        usersTestClient.updateProfile({}, createAuthOpts(token))
+        usersTestClient.updateProfile({}, createAuthOpts(user.id, user.email))
       ).rejects.toMatchObject({ code: "invalid_argument" });
     });
 
     it("should update updated_at timestamp", async () => {
-      // Setup: Create user
+      // Setup: Create user via webhook
       const user = TEST_USERS.primary;
-      await userRepo.create({
-        id: user.id,
-        email: user.email,
-        name: user.name ?? undefined,
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user.id,
+          email: user.email,
+          user_metadata: { name: user.name ?? "Test User" },
+        })
+      );
 
       // Get initial timestamp
       const created = await userRepo.findById(user.id);
@@ -196,10 +186,9 @@ describe("API Handlers - Business Logic", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Execute: Call handler to update
-      const token = await generateTestJWT(user.id, user.email);
       const result = await usersTestClient.updateProfile(
         { name: "Updated Name" },
-        createAuthOpts(token)
+        createAuthOpts(user.id, user.email)
       );
 
       // Assert: Timestamp was updated
@@ -210,7 +199,7 @@ describe("API Handlers - Business Logic", () => {
     });
 
     it("should only update authenticated user's data", async () => {
-      // Setup: Create two users
+      // Setup: Create two users via webhooks
       const user1 = createTestUser({
         email: "user1@test.com",
         name: "User 1",
@@ -220,23 +209,26 @@ describe("API Handlers - Business Logic", () => {
         name: "User 2",
       });
 
-      await userRepo.create({
-        id: user1.id,
-        email: user1.email,
-        name: "User 1",
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user1.id,
+          email: user1.email,
+          user_metadata: { name: "User 1" },
+        })
+      );
 
-      await userRepo.create({
-        id: user2.id,
-        email: user2.email,
-        name: "User 2",
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user2.id,
+          email: user2.email,
+          user_metadata: { name: "User 2" },
+        })
+      );
 
       // Execute: User 1 updates their name
-      const token1 = await generateTestJWT(user1.id, user1.email);
       const result = await usersTestClient.updateProfile(
         { name: "Updated User 1" },
-        createAuthOpts(token1)
+        createAuthOpts(user1.id, user1.email)
       );
 
       // Assert: User 1 was updated
@@ -252,16 +244,17 @@ describe("API Handlers - Business Logic", () => {
     });
 
     it("should handle concurrent updates gracefully", async () => {
-      // Setup: Create user
+      // Setup: Create user via webhook
       const user = TEST_USERS.primary;
-      await userRepo.create({
-        id: user.id,
-        email: user.email,
-        name: user.name ?? undefined,
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user.id,
+          email: user.email,
+          user_metadata: { name: user.name ?? "Test User" },
+        })
+      );
 
-      const token = await generateTestJWT(user.id, user.email);
-      const authOpts = createAuthOpts(token);
+      const authOpts = createAuthOpts(user.id, user.email);
 
       // Execute: Make two concurrent update requests
       const [result1, result2] = await Promise.all([
@@ -280,10 +273,9 @@ describe("API Handlers - Business Logic", () => {
 
     it("should surface internal error when user missing during update", async () => {
       const user = TEST_USERS.primary;
-      const token = await generateTestJWT(user.id, user.email);
 
       await expect(
-        usersTestClient.updateProfile({ name: "Does Not Matter" }, createAuthOpts(token))
+        usersTestClient.updateProfile({ name: "Does Not Matter" }, createAuthOpts(user.id, user.email))
       ).rejects.toMatchObject({ code: "internal" });
     });
   });
@@ -292,14 +284,11 @@ describe("API Handlers - Business Logic", () => {
     it("should return proper error format", async () => {
       // Execute: Call handler for non-existent user
       const nonExistentUserId = "99999999-9999-9999-9999-999999999999";
-      const token = await generateTestJWT(
-        nonExistentUserId,
-        "nonexistent@test.com"
-      );
+      const nonExistentEmail = "nonexistent@test.com";
 
       // Assert: Error has proper structure
       try {
-        await usersTestClient.me(undefined, createAuthOpts(token));
+        await usersTestClient.me(undefined, createAuthOpts(nonExistentUserId, nonExistentEmail));
         expect.fail("Should have thrown error");
       } catch (error: any) {
         expect(error).toBeDefined();
@@ -309,20 +298,20 @@ describe("API Handlers - Business Logic", () => {
     });
 
     it("should include helpful error messages", async () => {
-      // Setup: Create user
+      // Setup: Create user via webhook
       const user = TEST_USERS.primary;
-      await userRepo.create({
-        id: user.id,
-        email: user.email,
-        name: user.name ?? undefined,
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user.id,
+          email: user.email,
+          user_metadata: { name: user.name ?? "Test User" },
+        })
+      );
 
       // Execute: Call handler with invalid update (no fields)
-      const token = await generateTestJWT(user.id, user.email);
-
       // Assert: Error message is helpful
       try {
-        await usersTestClient.updateProfile({}, createAuthOpts(token));
+        await usersTestClient.updateProfile({}, createAuthOpts(user.id, user.email));
         expect.fail("Should have thrown error");
       } catch (error: any) {
         expect(error.code).toBe("invalid_argument");
@@ -333,37 +322,39 @@ describe("API Handlers - Business Logic", () => {
 
   describe("Cross-user Isolation", () => {
     it("should not allow accessing other user's data", async () => {
-      // Setup: Create two users
+      // Setup: Create two users via webhooks
       const user1 = createTestUser({ email: "user1@test.com" });
       const user2 = createTestUser({ email: "user2@test.com" });
 
-      await userRepo.create({
-        id: user1.id,
-        email: user1.email,
-        name: user1.name ?? undefined,
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user1.id,
+          email: user1.email,
+          user_metadata: { name: user1.name ?? "User 1" },
+        })
+      );
 
-      await userRepo.create({
-        id: user2.id,
-        email: user2.email,
-        name: user2.name ?? undefined,
-      });
+      await userCreated(
+        createCustomAccessTokenHookPayload({
+          id: user2.id,
+          email: user2.email,
+          user_metadata: { name: user2.name ?? "User 2" },
+        })
+      );
 
       // Execute: User 1 accesses their data
-      const token1 = await generateTestJWT(user1.id, user1.email);
       const result1 = await usersTestClient.me(
         undefined,
-        createAuthOpts(token1)
+        createAuthOpts(user1.id, user1.email)
       );
 
       // Assert: User 1 gets their own data
       expect(result1.user.id).toBe(user1.id);
 
       // Execute: User 2 accesses their data
-      const token2 = await generateTestJWT(user2.id, user2.email);
       const result2 = await usersTestClient.me(
         undefined,
-        createAuthOpts(token2)
+        createAuthOpts(user2.id, user2.email)
       );
 
       // Assert: User 2 gets their own data

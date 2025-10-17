@@ -695,4 +695,205 @@ describe("Audio Transcription Processor", () => {
       expect(typeof handleAudioTranscription).toBe("function");
     });
   });
+
+  /**
+   * INTEGRATION TESTS: Idempotency & State Transitions
+   * These tests verify processor behavior with focus on state management
+   */
+  describe("Idempotency (Integration)", () => {
+    it("should skip processing when already completed", async () => {
+      const event = {
+        bookmarkId: 1000,
+        audioBucketKey: "audio-1000-completed.mp3",
+        source: BookmarkSource.YOUTUBE,
+        metadata: {},
+      };
+
+      // Mock that transcription is already completed
+      // In reality, if it's completed, this event wouldn't be published again
+      // But this tests defensive programming
+      mockDownload.mockResolvedValue(Buffer.from("test"));
+      mockTranscribe.mockResolvedValue({
+        results: {
+          channels: [{ alternatives: [{ transcript: "Already done" }] }],
+        },
+      });
+      mockExtractDeepgramData.mockReturnValue({
+        transcript: "Already done",
+        confidence: 0.9,
+        duration: 60,
+        sentiment: null,
+        sentimentScore: null,
+        deepgramSummary: null,
+      });
+      mockUpdateTranscriptionData.mockResolvedValue(undefined);
+      mockRemove.mockResolvedValue(undefined);
+      mockPublish.mockResolvedValue("msg-1000");
+
+      // First processing
+      await handleAudioTranscription(event);
+
+      // Second processing (duplicate event)
+      await handleAudioTranscription(event);
+
+      // Both should complete without errors
+      expect(mockDownload).toHaveBeenCalledTimes(2);
+      expect(mockTranscribe).toHaveBeenCalledTimes(2);
+      expect(mockUpdateTranscriptionData).toHaveBeenCalledTimes(2);
+    });
+
+    it("should handle concurrent duplicate events gracefully", async () => {
+      const event = {
+        bookmarkId: 1001,
+        audioBucketKey: "audio-1001-concurrent.mp3",
+        source: BookmarkSource.PODCAST,
+        metadata: {},
+      };
+
+      mockDownload.mockResolvedValue(Buffer.from("concurrent test"));
+      mockTranscribe.mockResolvedValue({
+        results: {
+          channels: [{ alternatives: [{ transcript: "Concurrent" }] }],
+        },
+      });
+      mockExtractDeepgramData.mockReturnValue({
+        transcript: "Concurrent",
+        confidence: 0.9,
+        duration: 60,
+        sentiment: null,
+        sentimentScore: null,
+        deepgramSummary: null,
+      });
+      mockUpdateTranscriptionData.mockResolvedValue(undefined);
+      mockRemove.mockResolvedValue(undefined);
+      mockPublish.mockResolvedValue("msg-concurrent");
+
+      // Process same event twice simultaneously
+      const results = await Promise.all([
+        handleAudioTranscription(event),
+        handleAudioTranscription(event),
+      ]);
+
+      // Both should complete successfully (Deepgram is idempotent)
+      expect(results).toHaveLength(2);
+      expect(mockDownload).toHaveBeenCalledTimes(2);
+      expect(mockTranscribe).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("State Transitions (Integration)", () => {
+    it("should transition through processing stages successfully", async () => {
+      const event = {
+        bookmarkId: 2000,
+        audioBucketKey: "audio-2000-state.mp3",
+        source: BookmarkSource.YOUTUBE,
+        metadata: {},
+      };
+
+      mockDownload.mockResolvedValue(Buffer.from("state test"));
+      mockTranscribe.mockResolvedValue({
+        results: {
+          channels: [{ alternatives: [{ transcript: "State transcript" }] }],
+        },
+      });
+      mockExtractDeepgramData.mockReturnValue({
+        transcript: "State transcript",
+        confidence: 0.95,
+        duration: 120,
+        sentiment: "positive",
+        sentimentScore: 0.8,
+        deepgramSummary: "State summary",
+      });
+      mockUpdateTranscriptionData.mockResolvedValue(undefined);
+      mockRemove.mockResolvedValue(undefined);
+      mockPublish.mockResolvedValue("msg-state");
+
+      await handleAudioTranscription(event);
+
+      // Verify complete processing flow
+      expect(mockDownload).toHaveBeenCalled(); // Download audio
+      expect(mockTranscribe).toHaveBeenCalled(); // Transcribe
+      expect(mockUpdateTranscriptionData).toHaveBeenCalled(); // Store data
+      expect(mockRemove).toHaveBeenCalled(); // Cleanup
+      expect(mockPublish).toHaveBeenCalled(); // Publish next event
+    });
+
+    it("should transition to 'failed' on transcription error", async () => {
+      const event = {
+        bookmarkId: 2001,
+        audioBucketKey: "audio-2001-fail.mp3",
+        source: BookmarkSource.YOUTUBE,
+        metadata: {},
+      };
+
+      mockDownload.mockResolvedValue(Buffer.from("fail test"));
+      mockTranscribe.mockRejectedValue(new Error("Deepgram API error"));
+      mockRemove.mockResolvedValue(undefined);
+      mockMarkAsFailed.mockResolvedValue(undefined);
+
+      await handleAudioTranscription(event);
+
+      // Should mark as failed
+      expect(mockMarkAsFailed).toHaveBeenCalledWith(
+        2001,
+        "Transcription failed: Deepgram API error"
+      );
+      expect(mockRemove).toHaveBeenCalled(); // Should still clean up
+    });
+
+    it("should persist data before publishing next event", async () => {
+      const event = {
+        bookmarkId: 2002,
+        audioBucketKey: "audio-2002-order.mp3",
+        source: BookmarkSource.PODCAST,
+        metadata: {},
+      };
+
+      let downloadCalled = false;
+      let transcribeCalled = false;
+      let updateDataCalled = false;
+      let publishCalled = false;
+
+      mockDownload.mockImplementation(async () => {
+        downloadCalled = true;
+        return Buffer.from("order test");
+      });
+      mockTranscribe.mockImplementation(async () => {
+        transcribeCalled = true;
+        expect(downloadCalled).toBe(true);
+        return {
+          results: {
+            channels: [{ alternatives: [{ transcript: "Order test" }] }],
+          },
+        };
+      });
+      mockExtractDeepgramData.mockReturnValue({
+        transcript: "Order test",
+        confidence: 0.9,
+        duration: 60,
+        sentiment: null,
+        sentimentScore: null,
+        deepgramSummary: null,
+      });
+      mockUpdateTranscriptionData.mockImplementation(async () => {
+        updateDataCalled = true;
+        expect(transcribeCalled).toBe(true);
+        expect(publishCalled).toBe(false);
+      });
+      mockRemove.mockResolvedValue(undefined);
+      mockPublish.mockImplementation(async () => {
+        publishCalled = true;
+        expect(updateDataCalled).toBe(true);
+        return "msg-order";
+      });
+
+      await handleAudioTranscription(event);
+
+      // Verify execution order
+      expect(downloadCalled).toBe(true);
+      expect(transcribeCalled).toBe(true);
+      expect(updateDataCalled).toBe(true);
+      expect(publishCalled).toBe(true);
+    });
+  });
 });

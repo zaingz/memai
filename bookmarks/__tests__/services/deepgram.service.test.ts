@@ -19,12 +19,14 @@ describe("DeepgramService", () => {
   const mockApiKey = "test-deepgram-api-key";
 
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
     service = new DeepgramService(mockApiKey);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   describe("transcribe", () => {
@@ -234,6 +236,71 @@ describe("DeepgramService", () => {
       await expect(service.transcribe(audioBuffer, audioKey)).rejects.toThrow(
         "Deepgram API error: Empty audio buffer"
       );
+    });
+  });
+
+  describe("Timeout Handling", () => {
+    it("should timeout after 60 seconds and cleanup resources", async () => {
+      const { createClient } = await import("@deepgram/sdk");
+      const audioBuffer = Buffer.from("fake audio data");
+      const audioKey = "test-audio-key";
+
+      // Mock transcribeFile to never resolve (simulates hang)
+      const mockTranscribeFile = vi.fn(() => new Promise(() => {})); // Never resolves
+
+      (createClient as any).mockReturnValue({
+        listen: {
+          prerecorded: {
+            transcribeFile: mockTranscribeFile,
+          },
+        },
+      });
+
+      // Start transcription (will hang)
+      const transcribePromise = service.transcribe(audioBuffer, audioKey);
+
+      // Fast-forward time by 60 seconds
+      await vi.advanceTimersByTimeAsync(60000);
+
+      // Should reject with timeout error
+      await expect(transcribePromise).rejects.toThrow(/timed out after 60 seconds/);
+
+      // Verify transcribeFile was called
+      expect(mockTranscribeFile).toHaveBeenCalledOnce();
+    });
+
+    it("should succeed when transcription completes within timeout", async () => {
+      const { createClient } = await import("@deepgram/sdk");
+      const mockDeepgramResponse = createTestDeepgramResponse();
+      const audioBuffer = Buffer.from("fake audio data");
+      const audioKey = "test-audio-key";
+
+      // Mock successful transcription that completes quickly
+      const mockTranscribeFile = vi.fn(() =>
+        Promise.resolve({
+          result: mockDeepgramResponse,
+          error: null,
+        })
+      );
+
+      (createClient as any).mockReturnValue({
+        listen: {
+          prerecorded: {
+            transcribeFile: mockTranscribeFile,
+          },
+        },
+      });
+
+      // Start transcription
+      const transcribePromise = service.transcribe(audioBuffer, audioKey);
+
+      // Fast-forward by 10 seconds (well within 60s timeout)
+      await vi.advanceTimersByTimeAsync(10000);
+
+      // Should succeed
+      const result = await transcribePromise;
+      expect(result).toBeDefined();
+      expect(result.results.channels).toHaveLength(1);
     });
   });
 });

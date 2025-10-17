@@ -1,12 +1,49 @@
 import { SQLDatabase } from "encore.dev/storage/sqldb";
 import { User } from "../types";
+import { BaseRepository } from "../../shared/repositories/base.repository";
 
 /**
  * UserRepository handles all database operations for users
  * Uses UUID as primary key (Supabase user ID)
+ * Extends BaseRepository with string ID type
  */
-export class UserRepository {
-  constructor(private readonly db: SQLDatabase) {}
+export class UserRepository extends BaseRepository<User, string> {
+  constructor(db: SQLDatabase) {
+    super(db);
+  }
+
+  /**
+   * Implementation of abstract method: Find user by ID
+   * Note: Users don't have ownership concept - userId parameter is the same as id
+   */
+  protected async findByIdQuery(
+    id: string,
+    userId: string
+  ): Promise<User | null> {
+    return (
+      (await this.db.queryRow<User>`
+      SELECT * FROM users WHERE id = ${id}
+    `) || null
+    );
+  }
+
+  /**
+   * Implementation of abstract method: Delete user
+   * Note: Users don't have ownership concept - userId parameter is the same as id
+   */
+  protected async deleteQuery(id: string, userId: string): Promise<void> {
+    await this.db.exec`
+      DELETE FROM users WHERE id = ${id}
+    `;
+  }
+
+  /**
+   * Implementation of abstract method: Update user status
+   * Note: Users don't have status tracking, so this throws an error
+   */
+  protected async updateStatus(): Promise<void> {
+    throw new Error("Users do not have status tracking");
+  }
 
   /**
    * Create a new user in the database
@@ -35,15 +72,12 @@ export class UserRepository {
 
   /**
    * Find a user by their ID (UUID from Supabase)
+   * Convenience method that wraps inherited findById
    * @param id User UUID
    * @returns User if found, null otherwise
    */
-  async findById(id: string): Promise<User | null> {
-    return (
-      (await this.db.queryRow<User>`
-      SELECT * FROM users WHERE id = ${id}
-    `) || null
-    );
+  async findByIdSimple(id: string): Promise<User | null> {
+    return this.findById(id, id); // For users, id and userId are the same
   }
 
   /**
@@ -60,13 +94,13 @@ export class UserRepository {
   }
 
   /**
-   * Alias for findById for backward compatibility
+   * Alias for findByIdSimple for backward compatibility
    * Used during Supabase JWT authentication
    * @param supabaseUserId Supabase user UUID
    * @returns User if found, null otherwise
    */
   async findBySupabaseId(supabaseUserId: string): Promise<User | null> {
-    return this.findById(supabaseUserId);
+    return this.findByIdSimple(supabaseUserId);
   }
 
   /**
@@ -157,13 +191,12 @@ export class UserRepository {
 
   /**
    * Delete a user by ID
+   * Convenience method that wraps inherited delete
    * @param id User UUID
    * @throws Error if user not found
    */
-  async delete(id: string): Promise<void> {
-    await this.db.exec`
-      DELETE FROM users WHERE id = ${id}
-    `;
+  async deleteSimple(id: string): Promise<void> {
+    await this.delete(id, id); // For users, id and userId are the same
   }
 
   /**

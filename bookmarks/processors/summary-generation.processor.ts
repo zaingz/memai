@@ -1,6 +1,5 @@
 import { Subscription } from "encore.dev/pubsub";
 import { secret } from "encore.dev/config";
-import log from "encore.dev/log";
 import { db } from "../db";
 import { audioTranscribedTopic } from "../events/audio-transcribed.events";
 import { AudioTranscribedEvent } from "../types";
@@ -8,6 +7,7 @@ import { OpenAIService } from "../services/openai.service";
 import { TranscriptionRepository } from "../repositories/transcription.repository";
 import { SUMMARY_PROMPTS, DEFAULT_SUMMARY_PROMPT } from "../config/prompts.config";
 import { BookmarkSource } from "../types/domain.types";
+import { BaseProcessor } from "../../shared/processors/base.processor";
 
 // Secrets
 const openaiApiKey = secret("OpenAIAPIKey");
@@ -20,62 +20,80 @@ const transcriptionRepo = new TranscriptionRepository(db);
  * Summary Generation Processor
  * Generates OpenAI summary with source-specific prompts
  * Independent: Uses source metadata to select appropriate prompt
- *
- * Exported for testing purposes
  */
-export async function handleSummaryGeneration(event: AudioTranscribedEvent) {
-  const { bookmarkId, transcript, source } = event;
+class SummaryGenerationProcessor extends BaseProcessor<AudioTranscribedEvent> {
+  constructor(
+    private readonly transcriptionRepo: TranscriptionRepository,
+    private readonly openaiService: OpenAIService
+  ) {
+    super("Summary Generation Processor");
+  }
 
-  try {
-    // Select source-specific prompt
-    const prompt = SUMMARY_PROMPTS[source as BookmarkSource] || DEFAULT_SUMMARY_PROMPT;
+  protected async processEvent(event: AudioTranscribedEvent): Promise<void> {
+    const { bookmarkId, transcript, source } = event;
 
-    log.info("Starting summary generation", {
-      bookmarkId,
-      source,
-      transcriptLength: transcript.length,
-      usingPrompt: source,
-    });
+    try {
+      // Select source-specific prompt
+      const prompt = SUMMARY_PROMPTS[source as BookmarkSource] || DEFAULT_SUMMARY_PROMPT;
 
-    // Generate summary using OpenAI with source-specific prompt
-    const summary = await openaiService.generateSummary(transcript, prompt);
+      this.logStep("Starting summary generation", {
+        bookmarkId,
+        source,
+        transcriptLength: transcript.length,
+        usingPrompt: source,
+      });
 
-    log.info("Summary generated", {
-      bookmarkId,
-      source,
-      summaryLength: summary.length,
-    });
+      // Generate summary using OpenAI with source-specific prompt
+      const summary = await this.openaiService.generateSummary(transcript, prompt);
 
-    // Store summary and mark as completed
-    await transcriptionRepo.updateSummary(bookmarkId, summary);
+      this.logStep("Summary generated", {
+        bookmarkId,
+        source,
+        summaryLength: summary.length,
+      });
 
-    log.info("Summary generation completed, transcription marked as completed", {
-      bookmarkId,
-      source,
-    });
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+      // Store summary and mark as completed
+      await this.transcriptionRepo.updateSummary(bookmarkId, summary);
 
-    log.error(error, "Summary generation failed", {
-      bookmarkId,
-      source,
-      errorMessage,
-    });
+      this.logStep("Summary stored, transcription marked as completed", {
+        bookmarkId,
+        source,
+      });
+    } catch (error) {
+      // Mark as failed
+      await this.transcriptionRepo.markAsFailed(
+        bookmarkId,
+        `Summary generation failed: ${error instanceof Error ? error.message : String(error)}`
+      );
 
-    // Mark as failed
-    await transcriptionRepo.markAsFailed(
-      bookmarkId,
-      `Summary generation failed: ${errorMessage}`
-    );
+      // Re-throw to let BaseProcessor handle final logging
+      throw error;
+    }
   }
 }
 
-// Subscription to audio-transcribed topic
+// Create processor instance
+const summaryGenerationProcessor = new SummaryGenerationProcessor(
+  transcriptionRepo,
+  openaiService
+);
+
+/**
+ * Legacy handler function for backward compatibility
+ * Exported for testing purposes
+ */
+export async function handleSummaryGeneration(event: AudioTranscribedEvent): Promise<void> {
+  return summaryGenerationProcessor.safeProcess(event);
+}
+
+/**
+ * Subscription to audio-transcribed topic
+ * Processes transcripts to generate AI summaries
+ */
 export const summaryGenerationSubscription = new Subscription(
   audioTranscribedTopic,
   "summary-generation-processor",
   {
-    handler: handleSummaryGeneration,
+    handler: (event) => summaryGenerationProcessor.safeProcess(event),
   }
 );

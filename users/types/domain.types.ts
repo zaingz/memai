@@ -3,6 +3,16 @@
 // ============================================
 
 /**
+ * User role enum for authorization
+ * NOTE: Current schema doesn't have role field yet
+ * This enum is defined for future use and middleware compatibility
+ */
+export enum UserRole {
+  USER = "user",
+  ADMIN = "admin",
+}
+
+/**
  * Database row interface for users table
  * Uses UUID as primary key (Supabase user ID)
  */

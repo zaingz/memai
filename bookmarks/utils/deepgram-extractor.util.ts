@@ -35,10 +35,10 @@ export function extractDeepgramData(
   const duration = response.metadata.duration;
 
   // Extract audio intelligence data
-  const sentiment = response.results.sentiments?.average?.sentiment || null;
+  const sentiment = response.results.sentiments?.average?.sentiment ?? null;
   const sentimentScore =
-    response.results.sentiments?.average?.sentiment_score || null;
-  const deepgramSummary = response.results.summary?.short || null;
+    response.results.sentiments?.average?.sentiment_score ?? null;
+  const deepgramSummary = response.results.summary?.short ?? null;
 
   return {
     transcript,

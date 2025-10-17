@@ -1,11 +1,12 @@
 /**
- * Token Estimator Utility Tests
+ * Token Estimator Utility Tests (Property-Based)
  *
  * Tests for token-estimator.util.ts utility functions.
- * Tests token counting, batching, and context window validation.
+ * Uses fast-check for property-based testing to generate comprehensive test cases.
  */
 
 import { describe, it, expect } from "vitest";
+import fc from "fast-check";
 import {
   estimateTokenCount,
   estimateTotalTokens,
@@ -15,309 +16,322 @@ import {
   getTokenStats,
 } from "../../utils/token-estimator.util";
 
-describe("token-estimator.util", () => {
+describe("token-estimator.util (Property-Based)", () => {
   describe("estimateTokenCount", () => {
-    it("should estimate tokens using character approximation", () => {
-      const text = "This is a test sentence with approximately twenty words in it for testing purposes.";
-      const tokens = estimateTokenCount(text);
+    it("PROPERTY: Monotonicity (longer text >= more tokens)", () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 1000 }),
+          fc.string({ minLength: 1, maxLength: 1000 }),
+          (text1, text2) => {
+            const tokens1 = estimateTokenCount(text1);
+            const tokens2 = estimateTokenCount(text2);
 
-      // ~84 chars / 4 = ~21 tokens
-      expect(tokens).toBeGreaterThan(15);
-      expect(tokens).toBeLessThan(25);
+            if (text1.length > text2.length) {
+              return tokens1 >= tokens2;
+            }
+            return true;
+          }
+        )
+      );
     });
 
-    it("should return 0 for empty string", () => {
-      const tokens = estimateTokenCount("");
-
-      expect(tokens).toBe(0);
+    it("PROPERTY: Determinism (same input always produces same output)", () => {
+      fc.assert(
+        fc.property(fc.string({ minLength: 0, maxLength: 1000 }), (text) => {
+          const tokens1 = estimateTokenCount(text);
+          const tokens2 = estimateTokenCount(text);
+          return tokens1 === tokens2;
+        })
+      );
     });
 
-    it("should handle single character", () => {
-      const tokens = estimateTokenCount("a");
-
-      expect(tokens).toBe(1); // Math.ceil(1/4) = 1
+    it("PROPERTY: Empty string always returns 0 tokens", () => {
+      expect(estimateTokenCount("")).toBe(0);
     });
 
-    it("should handle long text", () => {
-      const text = "a".repeat(1000); // 1000 characters
-      const tokens = estimateTokenCount(text);
-
-      expect(tokens).toBe(250); // 1000 / 4 = 250
+    it("PROPERTY: Token count within expected ratio range", () => {
+      fc.assert(
+        fc.property(fc.string({ minLength: 1, maxLength: 1000 }), (text) => {
+          const tokens = estimateTokenCount(text);
+          const charCount = text.length;
+          // Token ratio should be roughly 1 token per 4 characters (conservative estimate)
+          const expectedTokens = Math.ceil(charCount / 4);
+          return tokens === expectedTokens;
+        })
+      );
     });
 
-    it("should round up fractional tokens", () => {
-      const text = "abc"; // 3 characters
-      const tokens = estimateTokenCount(text);
-
-      expect(tokens).toBe(1); // Math.ceil(3/4) = 1
+    it("PROPERTY: Always returns non-negative integers", () => {
+      fc.assert(
+        fc.property(fc.string({ minLength: 0, maxLength: 1000 }), (text) => {
+          const tokens = estimateTokenCount(text);
+          return Number.isInteger(tokens) && tokens >= 0;
+        })
+      );
     });
   });
 
   describe("estimateTotalTokens", () => {
-    it("should sum tokens for multiple texts", () => {
-      const texts = [
-        "Four char",  // 9 chars = 3 tokens
-        "Eight chars", // 11 chars = 3 tokens
-        "Sixteen characters!!!", // 21 chars = 6 tokens
-      ];
-
-      const total = estimateTotalTokens(texts);
-
-      expect(total).toBe(12); // 3 + 3 + 6 = 12
+    it("PROPERTY: Sum of individual estimates equals total", () => {
+      fc.assert(
+        fc.property(fc.array(fc.string({ minLength: 0, maxLength: 100 })), (texts) => {
+          const total = estimateTotalTokens(texts);
+          const individualSum = texts.reduce(
+            (sum, text) => sum + estimateTokenCount(text),
+            0
+          );
+          return total === individualSum;
+        })
+      );
     });
 
-    it("should return 0 for empty array", () => {
-      const total = estimateTotalTokens([]);
-
-      expect(total).toBe(0);
+    it("PROPERTY: Empty array returns 0 tokens", () => {
+      expect(estimateTotalTokens([])).toBe(0);
     });
 
-    it("should handle array with empty strings", () => {
-      const texts = ["", "", ""];
-      const total = estimateTotalTokens(texts);
-
-      expect(total).toBe(0);
+    it("PROPERTY: Monotonicity (more texts or longer texts >= more tokens)", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 0, maxLength: 100 }), { minLength: 1, maxLength: 10 }),
+          (texts) => {
+            const total1 = estimateTotalTokens(texts);
+            const total2 = estimateTotalTokens([...texts, "extra text"]);
+            return total2 >= total1;
+          }
+        )
+      );
     });
 
-    it("should handle mixed empty and non-empty strings", () => {
-      const texts = ["test", "", "data"];
-      const total = estimateTotalTokens(texts);
-
-      // "test" = 4 chars = 1 token, "" = 0 tokens, "data" = 4 chars = 1 token
-      expect(total).toBe(2);
-      expect(total).toBeGreaterThan(1);
+    it("PROPERTY: Order independence (same texts in different order = same total)", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 0, maxLength: 100 }), { minLength: 1, maxLength: 10 }),
+          (texts) => {
+            const total1 = estimateTotalTokens(texts);
+            const total2 = estimateTotalTokens([...texts].reverse());
+            return total1 === total2;
+          }
+        )
+      );
     });
   });
 
   describe("validateContextWindow", () => {
-    it("should return true when text fits within limits", () => {
-      const text = "a".repeat(100); // 100 chars = 25 tokens
-      const maxTokens = 2000;
-      const reservedTokens = 500;
+    it("PROPERTY: Text fits when tokens < (maxTokens - reservedTokens)", () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 0, maxLength: 100 }),
+          fc.integer({ min: 100, max: 10000 }),
+          fc.integer({ min: 10, max: 100 }),
+          (text, maxTokens, reservedTokens) => {
+            const tokenCount = estimateTokenCount(text);
+            const fits = validateContextWindow(text, maxTokens, reservedTokens);
 
-      const fits = validateContextWindow(text, maxTokens, reservedTokens);
-
-      // 25 tokens < (2000 - 500) = 1500
-      expect(fits).toBe(true);
+            if (tokenCount <= maxTokens - reservedTokens) {
+              return fits === true;
+            }
+            return fits === false;
+          }
+        )
+      );
     });
 
-    it("should return false when text exceeds limits", () => {
-      const text = "a".repeat(10000); // 10000 chars = 2500 tokens
-      const maxTokens = 2000;
-      const reservedTokens = 500;
-
-      const fits = validateContextWindow(text, maxTokens, reservedTokens);
-
-      // 2500 tokens > (2000 - 500) = 1500
-      expect(fits).toBe(false);
+    it("PROPERTY: Always returns boolean", () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 0, maxLength: 1000 }),
+          fc.integer({ min: 1, max: 10000 }),
+          (text, maxTokens) => {
+            const fits = validateContextWindow(text, maxTokens);
+            return typeof fits === "boolean";
+          }
+        )
+      );
     });
 
-    it("should use default reserved tokens when not provided", () => {
-      const text = "a".repeat(3600); // 3600 chars = 900 tokens
-      const maxTokens = 2000;
-      // Default reserved tokens = 1000
-
-      const fits = validateContextWindow(text, maxTokens);
-
-      // 900 tokens < (2000 - 1000) = 1000
-      expect(fits).toBe(true);
-    });
-
-    it("should handle exact boundary case", () => {
-      const text = "a".repeat(4000); // 4000 chars = 1000 tokens
-      const maxTokens = 2000;
-      const reservedTokens = 1000;
-
-      const fits = validateContextWindow(text, maxTokens, reservedTokens);
-
-      // 1000 tokens <= (2000 - 1000) = 1000
-      expect(fits).toBe(true);
+    it("PROPERTY: Uses default reserved tokens when not provided", () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 0, maxLength: 100 }),
+          fc.integer({ min: 1000, max: 5000 }),
+          (text, maxTokens) => {
+            const fitsWithDefault = validateContextWindow(text, maxTokens);
+            const fitsWithExplicit = validateContextWindow(text, maxTokens, 1000);
+            return fitsWithDefault === fitsWithExplicit;
+          }
+        )
+      );
     });
   });
 
   describe("calculateBatchSize", () => {
-    it("should calculate optimal batch size", () => {
-      const summaries = [
-        "a".repeat(100), // 25 tokens each
-        "a".repeat(100),
-        "a".repeat(100),
-        "a".repeat(100),
-      ];
-      const maxTokensPerBatch = 1000;
-      const overheadTokens = 100;
-
-      const batchSize = calculateBatchSize(summaries, maxTokensPerBatch, overheadTokens);
-
-      // Available tokens = 1000 - 100 = 900
-      // Avg tokens per summary = (4 * 25) / 4 = 25
-      // Optimal batch size = 900 / 25 = 36
-      // But can't exceed array length = 4
-      expect(batchSize).toBe(4);
+    it("PROPERTY: Batch size never exceeds array length", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 1, maxLength: 100 }), { minLength: 1, maxLength: 20 }),
+          fc.integer({ min: 100, max: 10000 }),
+          (summaries, maxTokens) => {
+            const batchSize = calculateBatchSize(summaries, maxTokens);
+            return batchSize <= summaries.length;
+          }
+        )
+      );
     });
 
-    it("should return 0 for empty array", () => {
-      const batchSize = calculateBatchSize([], 1000, 100);
-
-      expect(batchSize).toBe(0);
+    it("PROPERTY: Empty array returns 0", () => {
+      fc.assert(
+        fc.property(fc.integer({ min: 100, max: 10000 }), (maxTokens) => {
+          return calculateBatchSize([], maxTokens) === 0;
+        })
+      );
     });
 
-    it("should return at least 1 for non-empty array", () => {
-      const summaries = ["a".repeat(10000)]; // Very large summary
-      const maxTokensPerBatch = 100;
-
-      const batchSize = calculateBatchSize(summaries, maxTokensPerBatch);
-
-      expect(batchSize).toBe(1); // Always at least 1
+    it("PROPERTY: Non-empty array returns at least 1", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 1, maxLength: 100 }), { minLength: 1, maxLength: 10 }),
+          fc.integer({ min: 100, max: 10000 }),
+          (summaries, maxTokens) => {
+            const batchSize = calculateBatchSize(summaries, maxTokens);
+            return batchSize >= 1;
+          }
+        )
+      );
     });
 
-    it("should use default overhead tokens when not provided", () => {
-      const summaries = [
-        "a".repeat(200), // 50 tokens each
-        "a".repeat(200),
-      ];
-      const maxTokensPerBatch = 2000;
-      // Default overhead = 500
-
-      const batchSize = calculateBatchSize(summaries, maxTokensPerBatch);
-
-      // Available = 2000 - 500 = 1500
-      // Avg per summary = 50
-      // Optimal = 1500 / 50 = 30
-      // Limited by array length = 2
-      expect(batchSize).toBe(2);
+    it("PROPERTY: Batch size is always a positive integer", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 1, maxLength: 100 })),
+          fc.integer({ min: 100, max: 10000 }),
+          (summaries, maxTokens) => {
+            const batchSize = calculateBatchSize(summaries, maxTokens);
+            return Number.isInteger(batchSize) && batchSize >= 0;
+          }
+        )
+      );
     });
   });
 
   describe("batchSummaries", () => {
-    it("should split summaries into batches by token limit", () => {
-      const summaries = [
-        "a".repeat(400),  // 100 tokens
-        "a".repeat(400),  // 100 tokens
-        "a".repeat(400),  // 100 tokens
-        "a".repeat(400),  // 100 tokens
-      ];
-      const maxTokensPerBatch = 250;
-
-      const batches = batchSummaries(summaries, maxTokensPerBatch);
-
-      // Each summary = 100 tokens
-      // Batch 1: summary 1 + summary 2 = 200 tokens (fits)
-      // Batch 2: summary 3 + summary 4 = 200 tokens (fits)
-      expect(batches).toHaveLength(2);
-      expect(batches[0]).toHaveLength(2);
-      expect(batches[1]).toHaveLength(2);
+    it("PROPERTY: All summaries included in batches", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 1, maxLength: 100 }), { minLength: 1, maxLength: 20 }),
+          fc.integer({ min: 100, max: 10000 }),
+          (summaries, maxTokens) => {
+            const batches = batchSummaries(summaries, maxTokens);
+            const flattenedCount = batches.reduce((sum, batch) => sum + batch.length, 0);
+            return flattenedCount === summaries.length;
+          }
+        )
+      );
     });
 
-    it("should create single batch when all fit", () => {
-      const summaries = [
-        "a".repeat(100), // 25 tokens
-        "a".repeat(100), // 25 tokens
-        "a".repeat(100), // 25 tokens
-      ];
-      const maxTokensPerBatch = 1000;
-
-      const batches = batchSummaries(summaries, maxTokensPerBatch);
-
-      expect(batches).toHaveLength(1);
-      expect(batches[0]).toHaveLength(3);
+    it("PROPERTY: Empty array produces empty batches", () => {
+      fc.assert(
+        fc.property(fc.integer({ min: 100, max: 10000 }), (maxTokens) => {
+          const batches = batchSummaries([], maxTokens);
+          return batches.length === 0;
+        })
+      );
     });
 
-    it("should handle empty array", () => {
-      const batches = batchSummaries([], 1000);
+    it("PROPERTY: Each batch respects token limit (or has 1 item if oversized)", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 1, maxLength: 50 }), { minLength: 1, maxLength: 10 }),
+          fc.integer({ min: 50, max: 1000 }),
+          (summaries, maxTokens) => {
+            const batches = batchSummaries(summaries, maxTokens);
 
-      expect(batches).toEqual([]);
+            return batches.every((batch) => {
+              const batchTokens = estimateTotalTokens(batch);
+              // Either within limit, or single oversized item
+              return batchTokens <= maxTokens || batch.length === 1;
+            });
+          }
+        )
+      );
     });
 
-    it("should create one batch per summary if each exceeds limit", () => {
-      const summaries = [
-        "a".repeat(4000), // 1000 tokens
-        "a".repeat(4000), // 1000 tokens
-        "a".repeat(4000), // 1000 tokens
-      ];
-      const maxTokensPerBatch = 500; // Each summary exceeds this
-
-      const batches = batchSummaries(summaries, maxTokensPerBatch);
-
-      expect(batches).toHaveLength(3);
-      expect(batches[0]).toHaveLength(1);
-      expect(batches[1]).toHaveLength(1);
-      expect(batches[2]).toHaveLength(1);
-    });
-
-    it("should handle mixed summary sizes", () => {
-      const summaries = [
-        "a".repeat(200),  // 50 tokens
-        "a".repeat(800),  // 200 tokens
-        "a".repeat(200),  // 50 tokens
-        "a".repeat(200),  // 50 tokens
-      ];
-      const maxTokensPerBatch = 300;
-
-      const batches = batchSummaries(summaries, maxTokensPerBatch);
-
-      // Algorithm adds to current batch until exceeding limit
-      // Batch 1: sum1 (50) + sum2 (200) + sum3 (50) = 300 tokens (exactly at limit)
-      // Batch 2: sum4 (50) = 50 tokens
-      expect(batches).toHaveLength(2);
-      expect(batches[0]).toHaveLength(3);
-      expect(batches[1]).toHaveLength(1);
+    it("PROPERTY: Order preservation (items in same order as input)", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 1, maxLength: 100 }), { minLength: 1, maxLength: 10 }),
+          fc.integer({ min: 100, max: 10000 }),
+          (summaries, maxTokens) => {
+            const batches = batchSummaries(summaries, maxTokens);
+            const flattened = batches.flat();
+            return JSON.stringify(flattened) === JSON.stringify(summaries);
+          }
+        )
+      );
     });
   });
 
   describe("getTokenStats", () => {
-    it("should return accurate statistics for summaries", () => {
-      const summaries = [
-        "a".repeat(100),  // 25 tokens
-        "a".repeat(200),  // 50 tokens
-        "a".repeat(400),  // 100 tokens
-        "a".repeat(600),  // 150 tokens
-      ];
-
-      const stats = getTokenStats(summaries);
-
-      expect(stats.count).toBe(4);
-      expect(stats.totalTokens).toBe(325); // 25 + 50 + 100 + 150
-      expect(stats.avgTokens).toBe(81); // Math.round(325 / 4)
-      expect(stats.minTokens).toBe(25);
-      expect(stats.maxTokens).toBe(150);
+    it("PROPERTY: Count equals array length", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 0, maxLength: 100 })),
+          (summaries) => {
+            const stats = getTokenStats(summaries);
+            return stats.count === summaries.length;
+          }
+        )
+      );
     });
 
-    it("should return zeros for empty array", () => {
-      const stats = getTokenStats([]);
+    it("PROPERTY: Total tokens equals sum of individual estimates", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 0, maxLength: 100 })),
+          (summaries) => {
+            const stats = getTokenStats(summaries);
+            const expectedTotal = estimateTotalTokens(summaries);
+            return stats.totalTokens === expectedTotal;
+          }
+        )
+      );
+    });
 
+    it("PROPERTY: Min and max are within bounds", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 1, maxLength: 100 }), { minLength: 1, maxLength: 10 }),
+          (summaries) => {
+            const stats = getTokenStats(summaries);
+            const tokens = summaries.map(estimateTokenCount);
+            const actualMin = Math.min(...tokens);
+            const actualMax = Math.max(...tokens);
+
+            return stats.minTokens === actualMin && stats.maxTokens === actualMax;
+          }
+        )
+      );
+    });
+
+    it("PROPERTY: Average is within min and max range", () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 1, maxLength: 100 }), { minLength: 1, maxLength: 10 }),
+          (summaries) => {
+            const stats = getTokenStats(summaries);
+            return stats.avgTokens >= stats.minTokens && stats.avgTokens <= stats.maxTokens;
+          }
+        )
+      );
+    });
+
+    it("PROPERTY: Empty array returns all zeros", () => {
+      const stats = getTokenStats([]);
       expect(stats.count).toBe(0);
       expect(stats.totalTokens).toBe(0);
       expect(stats.avgTokens).toBe(0);
       expect(stats.minTokens).toBe(0);
       expect(stats.maxTokens).toBe(0);
-    });
-
-    it("should handle single summary", () => {
-      const summaries = ["a".repeat(400)]; // 100 tokens
-
-      const stats = getTokenStats(summaries);
-
-      expect(stats.count).toBe(1);
-      expect(stats.totalTokens).toBe(100);
-      expect(stats.avgTokens).toBe(100);
-      expect(stats.minTokens).toBe(100);
-      expect(stats.maxTokens).toBe(100);
-    });
-
-    it("should handle all same size summaries", () => {
-      const summaries = [
-        "a".repeat(200), // 50 tokens
-        "a".repeat(200), // 50 tokens
-        "a".repeat(200), // 50 tokens
-      ];
-
-      const stats = getTokenStats(summaries);
-
-      expect(stats.count).toBe(3);
-      expect(stats.totalTokens).toBe(150);
-      expect(stats.avgTokens).toBe(50);
-      expect(stats.minTokens).toBe(50);
-      expect(stats.maxTokens).toBe(50);
     });
   });
 });

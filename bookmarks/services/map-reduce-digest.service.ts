@@ -89,7 +89,14 @@ function termOverlap(a: string, b: string): number {
   return intersection / Math.min(setA.size, setB.size);
 }
 
-function extractJsonPayload(text: string): any {
+/**
+ * Extracts JSON payload from LLM response text
+ * Handles various formats: raw JSON, fenced code blocks, embedded JSON
+ * @param text - LLM response text potentially containing JSON
+ * @returns Parsed JSON as unknown (caller must validate structure)
+ * @throws Error if no valid JSON found
+ */
+function extractJsonPayload(text: string): unknown {
   const trimmed = text.trim();
   try {
     return JSON.parse(trimmed);
@@ -293,22 +300,29 @@ ${facts ? facts : "• (fact missing)"}
       const response = await this.llm.invoke(prompt);
       const payload = extractJsonPayload(response.content.toString());
 
-      if (!payload?.cluster_title || !payload?.narrative_paragraph) {
+      // Runtime validation of LLM response structure
+      if (
+        typeof payload !== "object" ||
+        payload === null ||
+        !("cluster_title" in payload) ||
+        !("narrative_paragraph" in payload)
+      ) {
         throw new Error(
-          `Cluster summary missing fields for slug ${cluster.slug}`
+          `Cluster summary missing required fields for slug ${cluster.slug}`
         );
       }
 
-      const keyTakeaways = Array.isArray(payload.key_takeaways)
-        ? payload.key_takeaways.map((t: any) => t.toString())
+      const keyTakeaways = Array.isArray((payload as Record<string, unknown>).key_takeaways)
+        ? ((payload as Record<string, unknown>).key_takeaways as unknown[]).map((t) => String(t))
         : [];
 
+      const typedPayload = payload as Record<string, unknown>;
       summaries.push({
         slug: cluster.slug,
-        title: payload.cluster_title.toString(),
-        narrative: payload.narrative_paragraph.toString(),
+        title: String(typedPayload.cluster_title),
+        narrative: String(typedPayload.narrative_paragraph),
         keyTakeaways,
-        bridgeSentence: (payload.bridge_sentence || "").toString(),
+        bridgeSentence: String(typedPayload.bridge_sentence || ""),
         tags: Array.from(cluster.tags),
       });
     }
@@ -456,35 +470,41 @@ ${facts ? facts : "• (fact missing)"}
         });
       }
 
-      payload.forEach((rawBeat: any, idx: number) => {
+      payload.forEach((rawBeatUnknown: unknown, idx: number) => {
+        // Runtime validation: ensure each beat is an object
+        const rawBeat =
+          typeof rawBeatUnknown === "object" && rawBeatUnknown !== null
+            ? (rawBeatUnknown as Record<string, unknown>)
+            : {};
+
         const itemNumber =
-          typeof rawBeat?.item_number === "number"
+          typeof rawBeat.item_number === "number"
             ? rawBeat.item_number
             : currentIndex + idx + 1;
 
         const cleanKey = slugify(
-          rawBeat?.group_key || "",
-          rawBeat?.theme_title || ""
+          String(rawBeat.group_key || ""),
+          String(rawBeat.theme_title || "")
         );
 
-        const tags = normalizeTags(rawBeat?.tags);
+        const tags = normalizeTags(
+          Array.isArray(rawBeat.tags) ? rawBeat.tags.map(String) : undefined
+        );
 
         beats.push({
           itemNumber,
           groupKey: cleanKey,
-          rawGroupKey: (rawBeat?.group_key || "").toString(),
-          themeTitle: (rawBeat?.theme_title || "").toString(),
-          oneSentenceSummary: (rawBeat?.one_sentence_summary || "").toString(),
+          rawGroupKey: String(rawBeat.group_key || ""),
+          themeTitle: String(rawBeat.theme_title || ""),
+          oneSentenceSummary: String(rawBeat.one_sentence_summary || ""),
           keyFacts:
-            Array.isArray(rawBeat?.key_facts) && rawBeat.key_facts.length
-              ? rawBeat.key_facts.map((f: any) => f.toString())
+            Array.isArray(rawBeat.key_facts) && rawBeat.key_facts.length > 0
+              ? (rawBeat.key_facts as unknown[]).map((f) => String(f))
               : [],
-          contextAndImplication: (
-            rawBeat?.context_and_implication || ""
-          ).toString(),
-          signals: (rawBeat?.signals || "").toString(),
+          contextAndImplication: String(rawBeat.context_and_implication || ""),
+          signals: String(rawBeat.signals || ""),
           tags,
-          sourceNotes: (rawBeat?.source_notes || "").toString(),
+          sourceNotes: String(rawBeat.source_notes || ""),
         });
       });
 

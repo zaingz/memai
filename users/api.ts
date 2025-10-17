@@ -1,7 +1,7 @@
 import { api, APIError } from "encore.dev/api";
-import { getAuthData } from "~encore/auth";
 import log from "encore.dev/log";
 import { db } from "./db";
+import { withAuth, validateAtLeastOne } from "../shared/middleware";
 import { UserRepository } from "./repositories/user.repository";
 import { MeResponse, UpdateProfileRequest, UpdateProfileResponse, GetUserIdsResponse } from "./types";
 
@@ -62,18 +62,10 @@ const userRepo = new UserRepository(db);
  */
 export const me = api(
   { expose: true, method: "GET", path: "/users/me", auth: true },
-  async (): Promise<MeResponse> => {
-    // Get authenticated user data from auth handler
-    // auth.userID is now the Supabase user UUID (not the integer ID)
-    const auth = getAuthData();
-
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-
+  withAuth(async (_req, auth): Promise<MeResponse> => {
     try {
       // Look up user by Supabase UUID (which is now the primary key)
-      const user = await userRepo.findById(auth.userID);
+      const user = await userRepo.findByIdSimple(auth.userID);
 
       if (!user) {
         log.warn("User not found in local database", {
@@ -106,7 +98,7 @@ export const me = api(
 
       throw APIError.notFound("User not found in local database");
     }
-  }
+  })
 );
 
 /**
@@ -123,21 +115,10 @@ export const me = api(
  */
 export const updateProfile = api(
   { expose: true, method: "PATCH", path: "/users/me", auth: true },
-  async (req: UpdateProfileRequest): Promise<UpdateProfileResponse> => {
-    // Get authenticated user data from auth handler
-    const auth = getAuthData();
-
-    if (!auth) {
-      throw APIError.unauthenticated("Authentication required");
-    }
-
+  withAuth(async (req: UpdateProfileRequest, auth): Promise<UpdateProfileResponse> => {
     try {
       // Validate that at least one field is provided
-      if (req.name === undefined) {
-        throw APIError.invalidArgument(
-          "At least one field must be provided for update"
-        );
-      }
+      validateAtLeastOne(req, ["name"], "profile update");
 
       // Update user profile
       const updatedUser = await userRepo.update(auth.userID, {
@@ -170,7 +151,7 @@ export const updateProfile = api(
 
       throw APIError.internal("Failed to update user profile");
     }
-  }
+  })
 );
 
 /**

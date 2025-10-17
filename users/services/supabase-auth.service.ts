@@ -19,6 +19,7 @@ import {
 export class SupabaseAuthService {
   private adminClient: SupabaseClient;
   private anonClient: SupabaseClient;
+  private readonly VERIFY_TIMEOUT_MS = 10000; // 10 seconds
 
   constructor() {
     // Admin client with service role key
@@ -67,10 +68,22 @@ export class SupabaseAuthService {
     try {
       // Use getUser() not getSession() for server-side validation
       // getUser() always validates with Supabase Auth server
-      const {
-        data: { user },
-        error,
-      } = await this.anonClient.auth.getUser(token);
+      const verifyPromise = this.anonClient.auth.getUser(token);
+
+      // Race between verification and timeout
+      const result = await Promise.race([
+        verifyPromise,
+        this.createTimeout(this.VERIFY_TIMEOUT_MS),
+      ]);
+
+      // Check if timeout occurred
+      if (result === "TIMEOUT") {
+        throw new Error(
+          `Token verification timed out after ${this.VERIFY_TIMEOUT_MS}ms`
+        );
+      }
+
+      const { data: { user }, error } = result;
 
       if (error) {
         log.warn("Token validation failed", {
@@ -95,6 +108,16 @@ export class SupabaseAuthService {
         ? error
         : new Error("Token validation failed");
     }
+  }
+
+  /**
+   * Helper method to create a timeout promise
+   * Used to enforce time limits on external API calls
+   */
+  private createTimeout(ms: number): Promise<"TIMEOUT"> {
+    return new Promise((resolve) => {
+      setTimeout(() => resolve("TIMEOUT"), ms);
+    });
   }
 
   /**
@@ -172,6 +195,7 @@ export class SupabaseAuthService {
    *
    * @param email - Email address to check
    * @returns true if email exists, false otherwise
+   * @throws Error if the query fails
    */
   async emailExists(email: string): Promise<boolean> {
     try {
@@ -179,14 +203,23 @@ export class SupabaseAuthService {
       const { data, error } = await this.adminClient.auth.admin.listUsers();
 
       if (error) {
-        log.warn("Failed to check email existence", { error: error.message });
-        return false;
+        log.error(error, "Failed to check email existence", {
+          error: error.message,
+          email
+        });
+        throw new Error(`Failed to check email existence: ${error.message}`);
       }
 
-      return data.users.some((user) => user.email === email);
+      const exists = data.users.some((user) => user.email === email);
+
+      log.info("Email existence check completed", { email, exists });
+
+      return exists;
     } catch (error) {
       log.error(error, "Error checking email existence", { email });
-      return false;
+      throw error instanceof Error
+        ? error
+        : new Error("Email existence check failed");
     }
   }
 

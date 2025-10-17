@@ -147,7 +147,7 @@ export class DailyDigestService {
       };
 
       // Step 8: Mark digest as completed
-      await this.digestRepo.markAsCompleted(
+      await this.digestRepo.markAsCompletedWithContent(
         digest.id,
         digestContent,
         totalDuration,

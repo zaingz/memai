@@ -25,7 +25,7 @@ export interface WebContent {
   char_count: number | null;
   estimated_reading_minutes: number | null;
   summary: string | null;
-  metadata: Record<string, any> | null;
+  metadata: Record<string, unknown> | null;
   status: ContentStatus;
   error_message: string | null;
   processing_started_at: Date | null;
@@ -56,7 +56,7 @@ export interface FirecrawlScrapeResponse {
       ogImage?: string;
       author?: string;
       publishedTime?: string;
-      [key: string]: any;
+      [key: string]: unknown;
     };
   };
 }

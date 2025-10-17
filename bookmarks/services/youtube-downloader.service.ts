@@ -45,6 +45,8 @@ log.info("YouTube downloader initialized", {
  * Service for downloading YouTube audio and uploading to Encore bucket
  */
 export class YouTubeDownloaderService {
+  private readonly DOWNLOAD_TIMEOUT_MS = 120000; // 2 minutes
+
   /**
    * Downloads audio from YouTube and uploads to bucket
    * @param videoId - YouTube video ID
@@ -69,10 +71,22 @@ export class YouTubeDownloaderService {
     });
 
     try {
-      // Download audio to temp file
-      const { stdout, stderr } = await exec(
+      // Download audio to temp file with timeout
+      const execPromise = exec(
         `${YT_DLP_PATH} -x --audio-format ${YOUTUBE_CONFIG.audioFormat} --audio-quality ${YOUTUBE_CONFIG.audioQuality} -o "${tempPath}" "${youtubeUrl}"`
       );
+
+      const result = await Promise.race([
+        execPromise,
+        this.createTimeout(this.DOWNLOAD_TIMEOUT_MS),
+      ]);
+
+      // Check if timeout occurred
+      if (result === "TIMEOUT") {
+        throw new Error(`YouTube download timed out after ${this.DOWNLOAD_TIMEOUT_MS}ms`);
+      }
+
+      const { stdout, stderr } = result;
 
       if (stderr && !stderr.includes("Deleting original file")) {
         log.warn("yt-dlp stderr output", { stderr });
@@ -122,5 +136,15 @@ export class YouTubeDownloaderService {
         `Failed to download YouTube audio: ${error instanceof Error ? error.message : String(error)}`
       );
     }
+  }
+
+  /**
+   * Creates a timeout promise
+   * Follows the same pattern as Deepgram and OpenAI services for consistent timeout handling
+   */
+  private createTimeout(ms: number): Promise<"TIMEOUT"> {
+    return new Promise((resolve) => {
+      setTimeout(() => resolve("TIMEOUT"), ms);
+    });
   }
 }

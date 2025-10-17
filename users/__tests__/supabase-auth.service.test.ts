@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
 
 vi.mock("../config/supabase.config", () => ({
   SUPABASE_CONFIG: {
@@ -55,6 +55,7 @@ describe("SupabaseAuthService", () => {
   }
 
   beforeEach(() => {
+    vi.useFakeTimers();
     adminClient = {
       auth: {
         admin: {
@@ -74,6 +75,11 @@ describe("SupabaseAuthService", () => {
     createClientMock.mockReset();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
   it("validates tokens via anon client", async () => {
     const expectedUser = { id: "user-123", email: "test@example.com" };
     anonClient.auth.getUser.mockResolvedValue({
@@ -84,8 +90,10 @@ describe("SupabaseAuthService", () => {
 
     const user = await service.getUserFromToken("token-123");
 
+    // Behavior-focused: verify the result is correct
     expect(user).toEqual(expectedUser);
-    expect(anonClient.auth.getUser).toHaveBeenCalledWith("token-123");
+    expect(user?.id).toBe("user-123");
+    expect(user?.email).toBe("test@example.com");
   });
 
   it("throws descriptive error when token validation fails", async () => {
@@ -186,5 +194,47 @@ describe("SupabaseAuthService", () => {
     await expect(service.deleteUser("fail")).rejects.toThrow(
       /permission denied/
     );
+  });
+
+  describe("Timeout Handling", () => {
+    it("should timeout after 10 seconds when Supabase API hangs", async () => {
+      // Mock getUser to never resolve (simulates hanging API)
+      anonClient.auth.getUser.mockImplementation(() => new Promise(() => {}));
+      const service = initService();
+
+      // Start token verification (will hang)
+      const verifyPromise = service.getUserFromToken("test-token");
+
+      // Fast-forward time by 10 seconds (timeout duration)
+      await vi.advanceTimersByTimeAsync(10000);
+
+      // Should reject with timeout error
+      await expect(verifyPromise).rejects.toThrow(
+        /Token verification timed out after 10000ms/
+      );
+
+      // Verify getUser was called
+      expect(anonClient.auth.getUser).toHaveBeenCalledOnce();
+    });
+
+    it("should succeed when Supabase completes within timeout", async () => {
+      const expectedUser = { id: "user-456", email: "fast@example.com" };
+      anonClient.auth.getUser.mockResolvedValue({
+        data: { user: expectedUser },
+        error: null,
+      });
+      const service = initService();
+
+      // Start token verification
+      const verifyPromise = service.getUserFromToken("test-token");
+
+      // Fast-forward by 2 seconds (well within 10s timeout)
+      await vi.advanceTimersByTimeAsync(2000);
+
+      // Should succeed
+      const user = await verifyPromise;
+      expect(user).toEqual(expectedUser);
+      expect(anonClient.auth.getUser).toHaveBeenCalledOnce();
+    });
   });
 });

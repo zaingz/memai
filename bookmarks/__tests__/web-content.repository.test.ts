@@ -566,6 +566,129 @@ describe("WebContentRepository", () => {
     });
   });
 
+  describe("User Ownership", () => {
+    it("should return null when bookmark belongs to different user (findByBookmarkId)", async () => {
+      // Setup: Two users
+      const user1Id = randomUUID();
+      const user2Id = randomUUID();
+
+      // Create bookmark for user1
+      const bookmark = await bookmarkRepo.create({
+        user_id: user1Id,
+        url: "https://example.com/article",
+        title: "User 1 Article",
+        source: BookmarkSource.WEB,
+        client_time: new Date(),
+        metadata: null,
+      });
+
+      // Create web content
+      await webContentRepo.createPending(bookmark.id);
+      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.updateContent(bookmark.id, {
+        raw_markdown: "# Article Content",
+        raw_html: "<h1>Article Content</h1>",
+        page_title: "Article",
+        page_description: "Description",
+        language: "en",
+        word_count: 2,
+        char_count: 17,
+        estimated_reading_minutes: 1,
+        metadata: {},
+      });
+
+      // Attempt to access as user2 (should return null)
+      const content = await webContentRepo.findByBookmarkId(bookmark.id, user2Id);
+
+      expect(content).toBeNull();
+    });
+
+    it("should return web content when bookmark belongs to same user", async () => {
+      // Setup
+      const userId = randomUUID();
+      const bookmark = await bookmarkRepo.create({
+        user_id: userId,
+        url: "https://example.com/article",
+        title: "User Article",
+        source: BookmarkSource.WEB,
+        client_time: new Date(),
+        metadata: null,
+      });
+
+      await webContentRepo.createPending(bookmark.id);
+      await webContentRepo.updateContent(bookmark.id, {
+        raw_markdown: "# Content",
+        raw_html: "<h1>Content</h1>",
+        page_title: "Title",
+        page_description: "Description",
+        language: "en",
+        word_count: 1,
+        char_count: 9,
+        estimated_reading_minutes: 1,
+        metadata: {},
+      });
+
+      // Access as same user (should succeed)
+      const content = await webContentRepo.findByBookmarkId(bookmark.id, userId);
+
+      expect(content).toBeDefined();
+      expect(content?.bookmark_id).toBe(bookmark.id);
+      expect(content?.page_title).toBe("Title");
+    });
+
+    it("should return null when web content's bookmark belongs to different user (findById)", async () => {
+      // Setup
+      const user1Id = randomUUID();
+      const user2Id = randomUUID();
+
+      const bookmark = await bookmarkRepo.create({
+        user_id: user1Id,
+        url: "https://example.com/article",
+        title: "User 1 Article",
+        source: BookmarkSource.WEB,
+        client_time: new Date(),
+        metadata: null,
+      });
+
+      await webContentRepo.createPending(bookmark.id);
+      const content = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
+      expect(content).toBeDefined();
+
+      // Attempt to access by content ID as user2
+      const result = await webContentRepo.findById(content!.id, user2Id);
+
+      expect(result).toBeNull();
+    });
+
+    it("should not delete web content when bookmark belongs to different user", async () => {
+      // Setup
+      const user1Id = randomUUID();
+      const user2Id = randomUUID();
+
+      const bookmark = await bookmarkRepo.create({
+        user_id: user1Id,
+        url: "https://example.com/article",
+        title: "User 1 Article",
+        source: BookmarkSource.WEB,
+        client_time: new Date(),
+        metadata: null,
+      });
+
+      await webContentRepo.createPending(bookmark.id);
+      const content = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
+      expect(content).toBeDefined();
+
+      // Attempt to delete as user2 (should throw)
+      await expect(
+        webContentRepo.delete(content!.id, user2Id)
+      ).rejects.toThrow(/not found for user/);
+
+      // Verify content still exists
+      const stillExists = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
+      expect(stillExists).toBeDefined();
+    });
+  });
+
   describe("integration scenarios", () => {
     it("should handle full web content lifecycle", async () => {
       const userId = randomUUID();

@@ -64,7 +64,7 @@ export const userCreated = api(
       const name = payload.claims.user_metadata?.name as string | undefined;
 
       // Check if user already exists (idempotency)
-      const existingUser = await userRepo.findById(userId);
+      const existingUser = await userRepo.findByIdSimple(userId);
 
       if (existingUser) {
         log.info("User already exists in local database", {

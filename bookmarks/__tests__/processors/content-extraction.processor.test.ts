@@ -673,4 +673,175 @@ describe("Content Extraction Processor", () => {
       expect(typeof handleContentExtraction).toBe("function");
     });
   });
+
+  /**
+   * INTEGRATION TESTS: Enhanced Idempotency & State Transitions
+   * These tests verify processor behavior with focus on state management
+   */
+  describe("Idempotency (Integration - Enhanced)", () => {
+    it("should skip processing when content is already completed", async () => {
+      const event: BookmarkSourceClassifiedEvent = {
+        bookmarkId: 1000,
+        source: BookmarkSource.BLOG,
+        url: "https://blog.example.com/completed",
+        title: "Already Completed",
+      };
+
+      // Content already completed
+      mockFindByBookmarkId.mockResolvedValue({
+        id: 1,
+        bookmark_id: 1000,
+        status: ContentStatus.COMPLETED,
+        raw_markdown: "Existing content",
+      });
+
+      await handleContentExtraction(event);
+
+      // Should skip processing entirely
+      expect(mockCreatePending).not.toHaveBeenCalled();
+      expect(mockMarkAsProcessing).not.toHaveBeenCalled();
+      expect(mockScrape).not.toHaveBeenCalled();
+      expect(mockPublish).not.toHaveBeenCalled();
+    });
+
+    it("should handle concurrent duplicate events gracefully", async () => {
+      const event: BookmarkSourceClassifiedEvent = {
+        bookmarkId: 1001,
+        source: BookmarkSource.WEB,
+        url: "https://example.com/concurrent",
+      };
+
+      // First call: no existing record
+      // Second call: record exists with 'processing' status
+      mockFindByBookmarkId
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 1, bookmark_id: 1001, status: ContentStatus.PROCESSING });
+
+      mockCreatePending.mockResolvedValue({ id: 1, bookmark_id: 1001, status: ContentStatus.PENDING });
+      mockMarkAsProcessing.mockResolvedValue(undefined);
+      mockScrape.mockResolvedValue({
+        success: true,
+        data: {
+          markdown: "Concurrent content",
+          html: "<p>Concurrent content</p>",
+          metadata: { title: "Concurrent", description: "", language: "en" },
+        },
+      });
+      mockUpdateContent.mockResolvedValue(undefined);
+      mockPublish.mockResolvedValue("msg-concurrent");
+
+      // Process same event twice simultaneously
+      const results = await Promise.all([
+        handleContentExtraction(event),
+        handleContentExtraction(event),
+      ]);
+
+      // First should process, second should skip
+      expect(mockFindByBookmarkId).toHaveBeenCalledTimes(2);
+      expect(mockCreatePending).toHaveBeenCalledTimes(1); // Only first call
+    });
+  });
+
+  describe("State Transitions (Integration)", () => {
+    it("should transition: pending → processing → completed", async () => {
+      const event: BookmarkSourceClassifiedEvent = {
+        bookmarkId: 2000,
+        source: BookmarkSource.BLOG,
+        url: "https://blog.example.com/state-test",
+        title: "State Test",
+      };
+
+      mockFindByBookmarkId.mockResolvedValue(null);
+      mockCreatePending.mockResolvedValue({ id: 1, bookmark_id: 2000, status: ContentStatus.PENDING });
+      mockMarkAsProcessing.mockResolvedValue(undefined);
+      mockScrape.mockResolvedValue({
+        success: true,
+        data: {
+          markdown: "# State Test Content",
+          html: "<h1>State Test Content</h1>",
+          metadata: { title: "State Test", description: "Test", language: "en" },
+        },
+      });
+      mockUpdateContent.mockResolvedValue(undefined);
+      mockPublish.mockResolvedValue("msg-state");
+
+      await handleContentExtraction(event);
+
+      // Verify state transitions
+      expect(mockCreatePending).toHaveBeenCalledWith(2000); // pending
+      expect(mockMarkAsProcessing).toHaveBeenCalledWith(2000); // processing
+      expect(mockUpdateContent).toHaveBeenCalled(); // stores data (completed)
+    });
+
+    it("should transition to 'failed' on scraping error", async () => {
+      const event: BookmarkSourceClassifiedEvent = {
+        bookmarkId: 2001,
+        source: BookmarkSource.BLOG,
+        url: "https://blog.example.com/fail-test",
+      };
+
+      mockFindByBookmarkId.mockResolvedValue(null);
+      mockCreatePending.mockResolvedValue({ id: 1, bookmark_id: 2001, status: ContentStatus.PENDING });
+      mockMarkAsProcessing.mockResolvedValue(undefined);
+      mockScrape.mockRejectedValue(new Error("Firecrawl API error"));
+      mockMarkAsFailed.mockResolvedValue(undefined);
+
+      await handleContentExtraction(event);
+
+      // Should mark as failed
+      expect(mockMarkAsFailed).toHaveBeenCalledWith(
+        2001,
+        "Extraction failed: Firecrawl API error"
+      );
+    });
+
+    it("should persist state before publishing next event", async () => {
+      const event: BookmarkSourceClassifiedEvent = {
+        bookmarkId: 2002,
+        source: BookmarkSource.WEB,
+        url: "https://example.com/order-test",
+      };
+
+      let createPendingCalled = false;
+      let markAsProcessingCalled = false;
+      let updateContentCalled = false;
+      let publishCalled = false;
+
+      mockFindByBookmarkId.mockResolvedValue(null);
+      mockCreatePending.mockImplementation(async () => {
+        createPendingCalled = true;
+        return { id: 1, bookmark_id: 2002, status: ContentStatus.PENDING };
+      });
+      mockMarkAsProcessing.mockImplementation(async () => {
+        markAsProcessingCalled = true;
+        expect(createPendingCalled).toBe(true);
+      });
+      mockScrape.mockResolvedValue({
+        success: true,
+        data: {
+          markdown: "Order test",
+          html: "<p>Order test</p>",
+          metadata: { title: "Order", description: "", language: "en" },
+        },
+      });
+      mockUpdateContent.mockImplementation(async () => {
+        updateContentCalled = true;
+        expect(markAsProcessingCalled).toBe(true);
+        expect(publishCalled).toBe(false);
+      });
+      mockPublish.mockImplementation(async () => {
+        publishCalled = true;
+        expect(updateContentCalled).toBe(true);
+        return "msg-order";
+      });
+
+      await handleContentExtraction(event);
+
+      // Verify execution order
+      expect(createPendingCalled).toBe(true);
+      expect(markAsProcessingCalled).toBe(true);
+      expect(updateContentCalled).toBe(true);
+      expect(publishCalled).toBe(true);
+    });
+  });
 });

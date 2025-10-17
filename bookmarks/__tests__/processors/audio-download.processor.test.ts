@@ -514,4 +514,151 @@ describe("Audio Download Processor", () => {
       expect(typeof handleAudioDownload).toBe("function");
     });
   });
+
+  /**
+   * INTEGRATION TESTS: Enhanced Idempotency & State Transitions
+   * These tests verify processor behavior with focus on state management
+   */
+  describe("Idempotency (Integration - Enhanced)", () => {
+    it("should skip processing when transcription is already completed", async () => {
+      const event = {
+        bookmarkId: 1000,
+        url: "https://www.youtube.com/watch?v=completed-test",
+        source: BookmarkSource.YOUTUBE,
+      };
+
+      // Transcription already completed
+      mockFindByBookmarkId.mockResolvedValue({
+        id: 1,
+        bookmark_id: 1000,
+        status: "completed",
+        transcript: "Existing transcript",
+      });
+
+      await handleAudioDownload(event);
+
+      // Should skip processing entirely
+      expect(mockCreatePending).not.toHaveBeenCalled();
+      expect(mockMarkAsProcessing).not.toHaveBeenCalled();
+      expect(mockGeminiTranscribeYouTubeVideo).not.toHaveBeenCalled();
+      expect(mockAudioTranscribedPublish).not.toHaveBeenCalled();
+    });
+
+    it("should handle concurrent duplicate events gracefully", async () => {
+      const event = {
+        bookmarkId: 1001,
+        url: "https://www.youtube.com/watch?v=concurrent-test",
+        source: BookmarkSource.YOUTUBE,
+      };
+
+      // First call: no existing record
+      // Second call: record exists with 'processing' status
+      mockFindByBookmarkId
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 1, bookmark_id: 1001, status: "processing" });
+
+      mockCreatePending.mockResolvedValue(undefined);
+      mockMarkAsProcessing.mockResolvedValue(undefined);
+      mockExtractYouTubeVideoId.mockReturnValue("concurrent-test");
+      mockGeminiSuccess("concurrent-test", "Concurrent transcript");
+      mockUpdateGeminiTranscriptionData.mockResolvedValue(undefined);
+      mockAudioTranscribedPublish.mockResolvedValue("msg-concurrent");
+
+      // Process same event twice simultaneously
+      const results = await Promise.all([
+        handleAudioDownload(event),
+        handleAudioDownload(event),
+      ]);
+
+      // First should process, second should skip
+      expect(mockFindByBookmarkId).toHaveBeenCalledTimes(2);
+      expect(mockCreatePending).toHaveBeenCalledTimes(1); // Only first call
+    });
+  });
+
+  describe("State Transitions (Integration)", () => {
+    it("should transition: pending → processing → completed (YouTube)", async () => {
+      const event = {
+        bookmarkId: 2000,
+        url: "https://www.youtube.com/watch?v=state-test",
+        source: BookmarkSource.YOUTUBE,
+      };
+
+      mockFindByBookmarkId.mockResolvedValue(null);
+      mockCreatePending.mockResolvedValue(undefined);
+      mockMarkAsProcessing.mockResolvedValue(undefined);
+      mockExtractYouTubeVideoId.mockReturnValue("state-test");
+      mockGeminiSuccess("state-test", "State test transcript");
+      mockUpdateGeminiTranscriptionData.mockResolvedValue(undefined);
+      mockAudioTranscribedPublish.mockResolvedValue("msg-state");
+
+      await handleAudioDownload(event);
+
+      // Verify state transitions
+      expect(mockCreatePending).toHaveBeenCalledWith(2000); // pending
+      expect(mockMarkAsProcessing).toHaveBeenCalledWith(2000); // processing
+      expect(mockUpdateGeminiTranscriptionData).toHaveBeenCalled(); // stores data (completed)
+    });
+
+    it("should transition to 'failed' on Gemini error", async () => {
+      const event = {
+        bookmarkId: 2001,
+        url: "https://www.youtube.com/watch?v=fail-test",
+        source: BookmarkSource.YOUTUBE,
+      };
+
+      mockFindByBookmarkId.mockResolvedValue(null);
+      mockCreatePending.mockResolvedValue(undefined);
+      mockMarkAsProcessing.mockResolvedValue(undefined);
+      mockExtractYouTubeVideoId.mockReturnValue("fail-test");
+      mockGeminiFailure("fail-test");
+      mockMarkAsFailed.mockResolvedValue(undefined);
+
+      await handleAudioDownload(event);
+
+      // Should mark as failed
+      expect(mockMarkAsFailed).toHaveBeenCalledWith(
+        2001,
+        expect.stringContaining("Gemini transcription failed")
+      );
+    });
+
+    it("should persist state before publishing next event (Podcast)", async () => {
+      const event = {
+        bookmarkId: 2002,
+        url: "https://podcast.example.com/episode",
+        source: BookmarkSource.PODCAST,
+      };
+
+      let createPendingCalled = false;
+      let markAsProcessingCalled = false;
+      let publishCalled = false;
+
+      mockFindByBookmarkId.mockResolvedValue(null);
+      mockCreatePending.mockImplementation(async () => {
+        createPendingCalled = true;
+        expect(markAsProcessingCalled).toBe(false);
+        expect(publishCalled).toBe(false);
+      });
+      mockMarkAsProcessing.mockImplementation(async () => {
+        markAsProcessingCalled = true;
+        expect(createPendingCalled).toBe(true);
+        expect(publishCalled).toBe(false);
+      });
+      mockPodcastDownloadAndUpload.mockResolvedValue("audio-2002-podcast.mp3");
+      mockPublish.mockImplementation(async () => {
+        publishCalled = true;
+        expect(createPendingCalled).toBe(true);
+        expect(markAsProcessingCalled).toBe(true);
+        return "msg-order";
+      });
+
+      await handleAudioDownload(event);
+
+      // Verify execution order
+      expect(createPendingCalled).toBe(true);
+      expect(markAsProcessingCalled).toBe(true);
+      expect(publishCalled).toBe(true);
+    });
+  });
 });

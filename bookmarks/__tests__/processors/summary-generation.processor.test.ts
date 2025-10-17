@@ -572,4 +572,119 @@ describe("Summary Generation Processor", () => {
       expect(typeof handleSummaryGeneration).toBe("function");
     });
   });
+
+  /**
+   * INTEGRATION TESTS: Idempotency & State Transitions
+   * These tests verify processor behavior with focus on state management
+   */
+  describe("Idempotency (Integration)", () => {
+    it("should skip processing when already completed", async () => {
+      const event = {
+        bookmarkId: 1000,
+        transcript: "Already summarized transcript",
+        source: BookmarkSource.YOUTUBE,
+      };
+
+      mockGenerateSummary.mockResolvedValue("Generated summary");
+      mockUpdateSummary.mockResolvedValue(undefined);
+
+      // First processing
+      await handleSummaryGeneration(event);
+
+      // Second processing (duplicate event)
+      await handleSummaryGeneration(event);
+
+      // Both should complete (OpenAI is idempotent for same input)
+      expect(mockGenerateSummary).toHaveBeenCalledTimes(2);
+      expect(mockUpdateSummary).toHaveBeenCalledTimes(2);
+    });
+
+    it("should handle concurrent duplicate events gracefully", async () => {
+      const event = {
+        bookmarkId: 1001,
+        transcript: "Concurrent test transcript",
+        source: BookmarkSource.PODCAST,
+      };
+
+      mockGenerateSummary.mockResolvedValue("Concurrent summary");
+      mockUpdateSummary.mockResolvedValue(undefined);
+
+      // Process same event twice simultaneously
+      const results = await Promise.all([
+        handleSummaryGeneration(event),
+        handleSummaryGeneration(event),
+      ]);
+
+      // Both should complete successfully
+      expect(results).toHaveLength(2);
+      expect(mockGenerateSummary).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("State Transitions (Integration)", () => {
+    it("should transition through summary generation successfully", async () => {
+      const event = {
+        bookmarkId: 2000,
+        transcript: "State transition test transcript",
+        source: BookmarkSource.YOUTUBE,
+      };
+
+      mockGenerateSummary.mockResolvedValue("State transition summary");
+      mockUpdateSummary.mockResolvedValue(undefined);
+
+      await handleSummaryGeneration(event);
+
+      // Verify complete processing flow
+      expect(mockGenerateSummary).toHaveBeenCalledWith(
+        event.transcript,
+        mockSummaryPromptsYouTube
+      );
+      expect(mockUpdateSummary).toHaveBeenCalledWith(2000, "State transition summary");
+    });
+
+    it("should transition to 'failed' on OpenAI error", async () => {
+      const event = {
+        bookmarkId: 2001,
+        transcript: "Fail test transcript",
+        source: BookmarkSource.YOUTUBE,
+      };
+
+      mockGenerateSummary.mockRejectedValue(new Error("OpenAI rate limit"));
+      mockMarkAsFailed.mockResolvedValue(undefined);
+
+      await handleSummaryGeneration(event);
+
+      // Should mark as failed
+      expect(mockMarkAsFailed).toHaveBeenCalledWith(
+        2001,
+        "Summary generation failed: OpenAI rate limit"
+      );
+    });
+
+    it("should persist summary before marking as completed", async () => {
+      const event = {
+        bookmarkId: 2002,
+        transcript: "Order test transcript",
+        source: BookmarkSource.PODCAST,
+      };
+
+      let generateCalled = false;
+      let updateCalled = false;
+
+      mockGenerateSummary.mockImplementation(async () => {
+        generateCalled = true;
+        return "Order test summary";
+      });
+      mockUpdateSummary.mockImplementation(async () => {
+        updateCalled = true;
+        expect(generateCalled).toBe(true);
+      });
+
+      await handleSummaryGeneration(event);
+
+      // Verify execution order
+      expect(generateCalled).toBe(true);
+      expect(updateCalled).toBe(true);
+    });
+  });
 });

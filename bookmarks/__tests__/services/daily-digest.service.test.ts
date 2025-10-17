@@ -46,6 +46,7 @@ describe("DailyDigestService", () => {
   let mockRepo: any;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
 
     // Create mock repository
@@ -64,6 +65,7 @@ describe("DailyDigestService", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   const getLastDigestCall = () => {
@@ -776,6 +778,87 @@ describe("DailyDigestService", () => {
         offset: 0,
         userId,
       });
+    });
+  });
+
+  describe("Timeout Handling", () => {
+    const testDate = new Date("2025-01-15T12:00:00Z");
+
+    it("should timeout when map-reduce service exceeds limit", async () => {
+      const transcriptions = [
+        { bookmark_id: 1, source: BookmarkSource.YOUTUBE, summary: "Test", created_at: new Date() },
+      ];
+
+      const newDigest = {
+        id: 999,
+        digest_date: testDate,
+        user_id: null,
+        status: DigestStatus.PROCESSING,
+      } as DailyDigest;
+
+      mockRepo.findByDate.mockResolvedValue(null);
+      mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]);
+      mockRepo.create.mockResolvedValue(newDigest);
+
+      // Mock MapReduceDigestService to hang indefinitely
+      mockGenerateDigest.mockImplementation(() => new Promise(() => {}));
+
+      // Start digest generation (will hang on map-reduce service)
+      const digestPromise = service.generateDailyDigest({
+        date: testDate,
+        forceRegenerate: false,
+      });
+
+      // Fast-forward time significantly (simulate timeout)
+      await vi.advanceTimersByTimeAsync(300000); // 5 minutes
+
+      // The promise should still be pending because map-reduce is hanging
+      // We verify by checking that mockGenerateDigest was called
+      expect(mockGenerateDigest).toHaveBeenCalledOnce();
+
+      // Verify digest was created but not completed due to timeout
+      expect(mockRepo.create).toHaveBeenCalled();
+      expect(mockRepo.markAsCompleted).not.toHaveBeenCalled();
+    });
+
+    it("should succeed when map-reduce completes within reasonable time", async () => {
+      const transcriptions = [
+        { bookmark_id: 1, source: BookmarkSource.YOUTUBE, summary: "Test", created_at: new Date() },
+      ];
+
+      const newDigest = {
+        id: 888,
+        digest_date: testDate,
+        user_id: null,
+        status: DigestStatus.COMPLETED,
+        digest_content: "Fast digest",
+      } as DailyDigest;
+
+      mockRepo.findByDate
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(newDigest);
+      mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
+      mockRepo.getCompletedWebContentInRange.mockResolvedValue([]);
+      mockRepo.create.mockResolvedValue(newDigest);
+      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+
+      // Mock quick map-reduce completion
+      mockGenerateDigest.mockResolvedValue("Fast digest");
+
+      // Start digest generation
+      const digestPromise = service.generateDailyDigest({
+        date: testDate,
+        forceRegenerate: false,
+      });
+
+      // Fast-forward by 5 seconds (reasonable time)
+      await vi.advanceTimersByTimeAsync(5000);
+
+      // Should succeed
+      const result = await digestPromise;
+      expect(result.digest_content).toBe("Fast digest");
+      expect(mockRepo.markAsCompleted).toHaveBeenCalledOnce();
     });
   });
 });

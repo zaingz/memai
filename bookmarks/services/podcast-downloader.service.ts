@@ -38,6 +38,9 @@ async function fetchWithTimeout(url: string, timeoutMs = FETCH_TIMEOUT): Promise
  * Mirrors YouTubeDownloaderService but for podcast episodes
  */
 export class PodcastDownloaderService {
+  private readonly CURL_TIMEOUT_MS = 300000; // 5 minutes
+  private readonly RSS_TIMEOUT_MS = 30000; // 30 seconds
+
   /**
    * Downloads audio from podcast episode and uploads to bucket
    * Full flow: Episode URL → RSS feed → Episode matching → Audio download → Bucket upload
@@ -165,8 +168,19 @@ export class PodcastDownloaderService {
     rssFeedUrl: string,
     episodeTitle: string
   ): Promise<string> {
-    // Fetch RSS feed with timeout
-    const response = await fetchWithTimeout(rssFeedUrl);
+    // Fetch RSS feed with timeout using Promise.race pattern
+    const fetchPromise = fetchWithTimeout(rssFeedUrl);
+    const result = await Promise.race([
+      fetchPromise,
+      this.createTimeout(this.RSS_TIMEOUT_MS),
+    ]);
+
+    // Check if timeout occurred
+    if (result === "TIMEOUT") {
+      throw new Error(`RSS feed fetch timed out after ${this.RSS_TIMEOUT_MS}ms`);
+    }
+
+    const response = result;
     if (!response.ok) {
       throw new Error(`Failed to fetch RSS feed: ${response.status} ${response.statusText}`);
     }
@@ -280,8 +294,17 @@ export class PodcastDownloaderService {
     });
 
     try {
-      // Download with spawn (avoids shell injection)
-      await this.downloadWithCurl(audioUrl, tempPath);
+      // Download with spawn (avoids shell injection) with timeout
+      const downloadPromise = this.downloadWithCurl(audioUrl, tempPath);
+      const result = await Promise.race([
+        downloadPromise,
+        this.createTimeout(this.CURL_TIMEOUT_MS),
+      ]);
+
+      // Check if timeout occurred
+      if (result === "TIMEOUT") {
+        throw new Error(`Podcast download timed out after ${this.CURL_TIMEOUT_MS}ms`);
+      }
 
       // Verify file was downloaded
       if (!fs.existsSync(tempPath)) {
@@ -383,6 +406,16 @@ export class PodcastDownloaderService {
           resolve();
         }
       });
+    });
+  }
+
+  /**
+   * Creates a timeout promise
+   * Follows the same pattern as other services for consistent timeout handling
+   */
+  private createTimeout(ms: number): Promise<"TIMEOUT"> {
+    return new Promise((resolve) => {
+      setTimeout(() => resolve("TIMEOUT"), ms);
     });
   }
 }

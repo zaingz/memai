@@ -345,6 +345,45 @@ describe("FirecrawlService", () => {
   });
 
   describe("timeout handling", () => {
+    it("should timeout after 30 seconds when Firecrawl API hangs", async () => {
+      // Mock fetch to never resolve (simulates hanging API)
+      mockFetch.mockImplementation(() => new Promise(() => {}));
+
+      // Start scrape (will hang)
+      const scrapePromise = service.scrape(testUrl);
+
+      // Fast-forward time by 30 seconds (timeout duration)
+      await vi.advanceTimersByTimeAsync(30000);
+
+      // Should attempt at least once
+      expect(mockFetch).toHaveBeenCalled();
+
+      // Fast-forward through all retries
+      await vi.advanceTimersByTimeAsync(30000);
+
+      // Should reject with error after all retries
+      await expect(scrapePromise).rejects.toThrow();
+    });
+
+    it("should succeed when Firecrawl completes within timeout", async () => {
+      const mockResponse = createMockSuccessResponse();
+
+      mockFetch.mockResolvedValueOnce(createMockFetchResponse({
+        json: async () => mockResponse,
+      }));
+
+      // Start scrape
+      const scrapePromise = service.scrape(testUrl);
+
+      // Fast-forward by 5 seconds (well within 30s timeout)
+      await vi.advanceTimersByTimeAsync(5000);
+
+      // Should succeed
+      const result = await scrapePromise;
+      expect(result).toEqual(mockResponse);
+      expect(mockFetch).toHaveBeenCalledOnce();
+    });
+
     it("should abort request after timeout", async () => {
       // Mock a request that never resolves
       mockFetch.mockImplementationOnce(

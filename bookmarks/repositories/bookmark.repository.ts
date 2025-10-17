@@ -1,11 +1,14 @@
 import { SQLDatabase } from "encore.dev/storage/sqldb";
 import { Bookmark, BookmarkSource } from "../types";
+import { BaseRepository } from "../../shared/repositories/base.repository";
 
 /**
  * Repository for bookmark database operations
  */
-export class BookmarkRepository {
-  constructor(private readonly db: SQLDatabase) {}
+export class BookmarkRepository extends BaseRepository<Bookmark> {
+  constructor(db: SQLDatabase) {
+    super(db);
+  }
 
   /**
    * Creates a new bookmark
@@ -39,9 +42,12 @@ export class BookmarkRepository {
   }
 
   /**
-   * Finds a bookmark by ID (filtered by user_id for data isolation)
+   * Implementation of abstract method: Find bookmark by ID with user ownership check
    */
-  async findById(id: number, userId: string): Promise<Bookmark | null> {
+  protected async findByIdQuery(
+    id: number,
+    userId: string
+  ): Promise<Bookmark | null> {
     const row = await this.db.queryRow<Bookmark>`
       SELECT * FROM bookmarks WHERE id = ${id} AND user_id = ${userId}
     `;
@@ -165,11 +171,11 @@ export class BookmarkRepository {
   }
 
   /**
-   * Deletes a bookmark (filtered by user_id)
+   * Implementation of abstract method: Delete bookmark with user ownership check
    */
-  async delete(id: number, userId: string): Promise<void> {
+  protected async deleteQuery(id: number, userId: string): Promise<void> {
     // Check if bookmark exists for this user
-    const existing = await this.findById(id, userId);
+    const existing = await this.findByIdQuery(id, userId);
     if (!existing) {
       throw new Error(`Bookmark with id ${id} not found for user ${userId}`);
     }

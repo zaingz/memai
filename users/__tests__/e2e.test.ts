@@ -11,29 +11,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { db } from "../db";
 import { UserRepository } from "../repositories/user.repository";
-import { generateTestJWT } from "../../test/utils/jwt-generator.util";
 import { createCustomAccessTokenHookPayload } from "../../test/utils/test-data.factory";
 import { clearUsersTable, userExists } from "../../test/utils/database.util";
+import { createAuthOpts } from "../../test/utils/api-test.factory";
 import { userCreated } from "../webhooks";
-import { MeResponse, UpdateProfileResponse } from "../types/api.types";
 import { randomUUID } from "crypto";
-import { decodeJwt } from "jose";
 import { APIError } from "encore.dev/api";
 import * as usersTestClient from "~encore/internal/clients/users/endpoints_testing";
-
-// Helper to decode JWT and create auth opts for test client
-function createAuthOpts(token: string) {
-  if (!token || token.trim() === "") {
-    throw APIError.unauthenticated("No authentication token provided");
-  }
-  const payload = decodeJwt(token);
-  return {
-    authData: {
-      userID: payload.sub || "",
-      email: (payload.email as string) || "",
-    },
-  };
-}
 
 describe("E2E: Critical User Journeys", () => {
   const userRepo = new UserRepository(db);
@@ -67,8 +51,7 @@ describe("E2E: Critical User Journeys", () => {
       expect(exists).toBe(true);
 
       // STEP 3: User fetches their profile (simulates login → API call)
-      const token = await generateTestJWT(userId, userEmail);
-      const profileResponse = await usersTestClient.me(undefined, createAuthOpts(token));
+      const profileResponse = await usersTestClient.me(undefined, createAuthOpts(userId, userEmail));
 
       expect(profileResponse.user.id).toBe(userId);
       expect(profileResponse.user.email).toBe(userEmail);
@@ -78,13 +61,13 @@ describe("E2E: Critical User Journeys", () => {
       const updatedName = "Updated Name";
       const updateResponse = await usersTestClient.updateProfile(
         { name: updatedName },
-        createAuthOpts(token)
+        createAuthOpts(userId, userEmail)
       );
 
       expect(updateResponse.user.name).toBe(updatedName);
 
       // STEP 5: Verify update persisted
-      const verifyResponse = await usersTestClient.me(undefined, createAuthOpts(token));
+      const verifyResponse = await usersTestClient.me(undefined, createAuthOpts(userId, userEmail));
       expect(verifyResponse.user.name).toBe(updatedName);
     });
   });
@@ -115,8 +98,7 @@ describe("E2E: Critical User Journeys", () => {
       expect(user).toBeDefined();
 
       // Should be able to access profile normally
-      const token = await generateTestJWT(userId, userEmail);
-      const profileResponse = await usersTestClient.me(undefined, createAuthOpts(token));
+      const profileResponse = await usersTestClient.me(undefined, createAuthOpts(userId, userEmail));
       expect(profileResponse.user).toBeDefined();
     });
   });
@@ -145,12 +127,10 @@ describe("E2E: Critical User Journeys", () => {
       }
 
       // User 1 updates their profile
-      const token1 = await generateTestJWT(user1.id, user1.email);
-      await usersTestClient.updateProfile({ name: "User 1 Updated" }, createAuthOpts(token1));
+      await usersTestClient.updateProfile({ name: "User 1 Updated" }, createAuthOpts(user1.id, user1.email));
 
       // User 2 fetches their profile
-      const token2 = await generateTestJWT(user2.id, user2.email);
-      const response2 = await usersTestClient.me(undefined, createAuthOpts(token2));
+      const response2 = await usersTestClient.me(undefined, createAuthOpts(user2.id, user2.email));
 
       const userData2 = response2.user;
 
@@ -181,14 +161,11 @@ describe("E2E: Critical User Journeys", () => {
 
     it("should reject access for non-existent user", async () => {
       const nonExistentUserId = randomUUID();
-      const token = await generateTestJWT(
-        nonExistentUserId,
-        "nonexistent@test.com"
-      );
+      const nonExistentEmail = "nonexistent@test.com";
 
       // Try to fetch profile
       try {
-        await usersTestClient.me(undefined, createAuthOpts(token));
+        await usersTestClient.me(undefined, createAuthOpts(nonExistentUserId, nonExistentEmail));
         throw new Error("Should have thrown not_found error");
       } catch (error: any) {
         expect(error.code).toBe("not_found");

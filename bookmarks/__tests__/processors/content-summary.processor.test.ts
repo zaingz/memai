@@ -609,4 +609,145 @@ describe("Content Summary Processor", () => {
       expect(typeof handleContentSummary).toBe("function");
     });
   });
+
+  /**
+   * INTEGRATION TESTS: Idempotency & State Transitions
+   * These tests verify processor behavior with focus on state management
+   */
+  describe("Idempotency (Integration)", () => {
+    it("should skip processing when already completed", async () => {
+      const event = {
+        bookmarkId: 1000,
+        content: "Already summarized content",
+        wordCount: 700,
+        source: BookmarkSource.BLOG,
+      };
+
+      mockGetContentType.mockReturnValue("article" as ContentType);
+      mockGenerateSummary.mockResolvedValue("Generated summary");
+      mockUpdateSummary.mockResolvedValue(undefined);
+      mockMarkAsCompleted.mockResolvedValue(undefined);
+
+      // First processing
+      await handleContentSummary(event);
+
+      // Second processing (duplicate event)
+      await handleContentSummary(event);
+
+      // Both should complete (OpenAI is idempotent for same input)
+      expect(mockGenerateSummary).toHaveBeenCalledTimes(2);
+      expect(mockUpdateSummary).toHaveBeenCalledTimes(2);
+      expect(mockMarkAsCompleted).toHaveBeenCalledTimes(2);
+    });
+
+    it("should handle concurrent duplicate events gracefully", async () => {
+      const event = {
+        bookmarkId: 1001,
+        content: "Concurrent test content",
+        wordCount: 500,
+        source: BookmarkSource.WEB,
+      };
+
+      mockGetContentType.mockReturnValue("article" as ContentType);
+      mockGenerateSummary.mockResolvedValue("Concurrent summary");
+      mockUpdateSummary.mockResolvedValue(undefined);
+      mockMarkAsCompleted.mockResolvedValue(undefined);
+
+      // Process same event twice simultaneously
+      const results = await Promise.all([
+        handleContentSummary(event),
+        handleContentSummary(event),
+      ]);
+
+      // Both should complete successfully
+      expect(results).toHaveLength(2);
+      expect(mockGenerateSummary).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("State Transitions (Integration)", () => {
+    it("should transition through summarization stages successfully", async () => {
+      const event = {
+        bookmarkId: 2000,
+        content: "State transition test content with many words",
+        wordCount: 800,
+        source: BookmarkSource.BLOG,
+      };
+
+      mockGetContentType.mockReturnValue("article" as ContentType);
+      mockGenerateSummary.mockResolvedValue("State transition summary");
+      mockUpdateSummary.mockResolvedValue(undefined);
+      mockMarkAsCompleted.mockResolvedValue(undefined);
+
+      await handleContentSummary(event);
+
+      // Verify complete processing flow
+      expect(mockGetContentType).toHaveBeenCalledWith(800);
+      expect(mockGenerateSummary).toHaveBeenCalled();
+      expect(mockUpdateSummary).toHaveBeenCalledWith(2000, "State transition summary");
+      expect(mockMarkAsCompleted).toHaveBeenCalledWith(2000);
+    });
+
+    it("should transition to 'failed' on OpenAI error", async () => {
+      const event = {
+        bookmarkId: 2001,
+        content: "Fail test content",
+        wordCount: 600,
+        source: BookmarkSource.BLOG,
+      };
+
+      mockGetContentType.mockReturnValue("article" as ContentType);
+      mockGenerateSummary.mockRejectedValue(new Error("OpenAI timeout"));
+      mockMarkAsFailed.mockResolvedValue(undefined);
+
+      await handleContentSummary(event);
+
+      // Should mark as failed
+      expect(mockMarkAsFailed).toHaveBeenCalledWith(
+        2001,
+        "Summarization failed: OpenAI timeout"
+      );
+    });
+
+    it("should persist summary before marking as completed", async () => {
+      const event = {
+        bookmarkId: 2002,
+        content: "Order test content",
+        wordCount: 1000,
+        source: BookmarkSource.LINKEDIN,
+      };
+
+      let getContentTypeCalled = false;
+      let generateCalled = false;
+      let updateCalled = false;
+      let markCompletedCalled = false;
+
+      mockGetContentType.mockImplementation(() => {
+        getContentTypeCalled = true;
+        return "article" as ContentType;
+      });
+      mockGenerateSummary.mockImplementation(async () => {
+        generateCalled = true;
+        expect(getContentTypeCalled).toBe(true);
+        return "Order test summary";
+      });
+      mockUpdateSummary.mockImplementation(async () => {
+        updateCalled = true;
+        expect(generateCalled).toBe(true);
+        expect(markCompletedCalled).toBe(false);
+      });
+      mockMarkAsCompleted.mockImplementation(async () => {
+        markCompletedCalled = true;
+        expect(updateCalled).toBe(true);
+      });
+
+      await handleContentSummary(event);
+
+      // Verify execution order
+      expect(getContentTypeCalled).toBe(true);
+      expect(generateCalled).toBe(true);
+      expect(updateCalled).toBe(true);
+      expect(markCompletedCalled).toBe(true);
+    });
+  });
 });

@@ -25,6 +25,7 @@ describe("OpenAIService", () => {
   const mockApiKey = "test-openai-api-key";
 
   beforeEach(async () => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
 
     // Import the mock
@@ -45,6 +46,7 @@ describe("OpenAIService", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   describe("generateSummary", () => {
@@ -252,6 +254,48 @@ describe("OpenAIService", () => {
       await expect(service.generateSummary("text")).rejects.toThrow(
         "OpenAI API error: Token limit exceeded for model gpt-4"
       );
+    });
+  });
+
+  describe("Timeout Handling", () => {
+    it("should timeout after 30 seconds when OpenAI API hangs", async () => {
+      const longTranscript = "A very long transcript that requires summarization...";
+
+      // Mock responses.create to never resolve (simulates hang)
+      mockCreate.mockImplementation(() => new Promise(() => {})); // Never resolves
+
+      // Start summary generation (will hang)
+      const summaryPromise = service.generateSummary(longTranscript);
+
+      // Fast-forward time by 30 seconds
+      await vi.advanceTimersByTimeAsync(30000);
+
+      // Should reject with timeout error
+      await expect(summaryPromise).rejects.toThrow(/timed out after 30 seconds/);
+
+      // Verify create was called
+      expect(mockCreate).toHaveBeenCalledOnce();
+    });
+
+    it("should succeed when OpenAI responds within timeout", async () => {
+      const transcript = "Test transcript for summarization.";
+      const mockResponse = {
+        output_text: "Test summary of the transcript.",
+      };
+
+      // Mock successful response that completes quickly
+      mockCreate.mockResolvedValue(mockResponse);
+
+      // Start summary generation
+      const summaryPromise = service.generateSummary(transcript);
+
+      // Fast-forward by 5 seconds (well within 30s timeout)
+      await vi.advanceTimersByTimeAsync(5000);
+
+      // Should succeed
+      const summary = await summaryPromise;
+      expect(summary).toBe("Test summary of the transcript.");
+      expect(mockCreate).toHaveBeenCalledOnce();
     });
   });
 });

@@ -95,20 +95,22 @@ describe("Supabase Auth Webhooks", () => {
       const userId = randomUUID();
       const email = "duplicate@test.com";
 
-      // Create user directly in database
-      await userRepo.create({
+      // Send webhook first time (creates user)
+      const initialPayload = createCustomAccessTokenHookPayload({
         id: userId,
         email: email,
-        name: "Existing User",
+        user_metadata: { name: "Existing User" },
       });
 
-      // Send webhook for same user
-      const payload = createCustomAccessTokenHookPayload({
+      await userCreated(initialPayload);
+
+      // Send webhook again for same user (duplicate)
+      const duplicatePayload = createCustomAccessTokenHookPayload({
         id: userId,
         email: email,
       });
 
-      const response = await userCreated(payload);
+      const response = await userCreated(duplicatePayload);
 
       // Should succeed with claims including local_db_synced (duplicate user)
       expect(response.claims?.local_db_synced).toBe(true);

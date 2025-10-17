@@ -16,6 +16,7 @@ export const DEEPGRAM_CONFIG = {
   intents: true,
   topics: true,
   language: "en" as const,
+  timeout: 60000, // 60 seconds timeout for audio transcription
 } as const;
 
 // ============================================
@@ -26,6 +27,7 @@ export const OPENAI_CONFIG = {
   model: "gpt-4.1-mini" as const,
   temperature: 0.7,
   maxOutputTokens: 500,
+  timeout: 30000, // 30 seconds timeout for API calls
   instructions:
     "You are a helpful assistant that creates concise, informative summaries of video transcripts. Focus on the main points and key takeaways.",
 } as const;

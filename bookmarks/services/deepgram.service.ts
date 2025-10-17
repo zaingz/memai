@@ -29,10 +29,21 @@ export class DeepgramService {
 
     try {
       // Transcribe with Deepgram using latest model and audio intelligence features
-      const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
-        audioBuffer,
-        DEEPGRAM_CONFIG
-      );
+      // Make API call with timeout (following Gemini service pattern)
+      const apiResult = await Promise.race([
+        deepgram.listen.prerecorded.transcribeFile(
+          audioBuffer,
+          DEEPGRAM_CONFIG
+        ),
+        this.createTimeout(DEEPGRAM_CONFIG.timeout),
+      ]);
+
+      // Check if timeout occurred
+      if (apiResult === "TIMEOUT") {
+        throw new Error("Deepgram API request timed out after 60 seconds");
+      }
+
+      const { result, error } = apiResult;
 
       if (error) {
         throw new Error(`Deepgram API error: ${error.message}`);
@@ -55,5 +66,15 @@ export class DeepgramService {
       log.error(error, "Failed to transcribe with Deepgram", { audioKey });
       throw error;
     }
+  }
+
+  /**
+   * Creates a timeout promise
+   * Follows the Gemini service pattern for consistent timeout handling
+   */
+  private createTimeout(ms: number): Promise<"TIMEOUT"> {
+    return new Promise((resolve) => {
+      setTimeout(() => resolve("TIMEOUT"), ms);
+    });
   }
 }
