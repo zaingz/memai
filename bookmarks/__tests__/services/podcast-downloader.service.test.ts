@@ -674,29 +674,4 @@ describe("PodcastDownloaderService", () => {
       );
     });
   });
-
-  describe("Timeout Handling", () => {
-    describe("downloadAndUpload()", () => {
-      it.skip("should timeout after 5 minutes when curl hangs", async () => {
-        // SKIPPED: This test requires proper async timer coordination with child_process
-        // The curl download timeout is implemented correctly in the service
-        // Manual testing shows it works as expected
-        // TODO: Re-enable with proper child_process mock that respects fake timers
-      });
-
-      it.skip("should succeed when curl completes within timeout", async () => {
-        // SKIPPED: Covered by other successful download tests
-        // The timeout implementation is verified by the timeout test above
-      });
-    });
-
-    describe("RSS Feed Fetch", () => {
-      it.skip("should timeout after 30 seconds when RSS fetch hangs", async () => {
-        // SKIPPED: This test requires complex Promise.race coordination with fake timers
-        // The RSS fetch timeout is implemented correctly in the service
-        // Manual testing shows it works as expected
-        // TODO: Re-enable with proper async/timer coordination
-      });
-    });
-  });
 });
