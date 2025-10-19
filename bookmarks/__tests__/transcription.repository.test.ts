@@ -50,7 +50,7 @@ describe("TranscriptionRepository", () => {
       await transcriptionRepo.createPending(bookmark.id);
 
       // Verify transcription was created
-      const transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription).toBeDefined();
       expect(transcription?.bookmark_id).toBe(bookmark.id);
       expect(transcription?.status).toBe(TranscriptionStatus.PENDING);
@@ -72,7 +72,7 @@ describe("TranscriptionRepository", () => {
 
       await transcriptionRepo.createPending(bookmark.id);
 
-      const transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.transcript).toBeNull();
       expect(transcription?.deepgram_summary).toBeNull();
       expect(transcription?.sentiment).toBeNull();
@@ -97,13 +97,13 @@ describe("TranscriptionRepository", () => {
 
       await transcriptionRepo.createPending(bookmark.id);
 
-      const found = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const found = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(found).toBeDefined();
       expect(found?.bookmark_id).toBe(bookmark.id);
     });
 
     it("should return null for non-existent transcription", async () => {
-      const found = await transcriptionRepo.findByBookmarkId(99999);
+      const found = await transcriptionRepo.findByBookmarkIdInternal(99999);
       expect(found).toBeNull();
     });
 
@@ -120,7 +120,7 @@ describe("TranscriptionRepository", () => {
 
       await transcriptionRepo.createPending(bookmark.id);
 
-      const found = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const found = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(found?.transcript).toBeNull();
       expect(found?.summary).toBeNull();
       expect(found?.error_message).toBeNull();
@@ -129,7 +129,7 @@ describe("TranscriptionRepository", () => {
     });
   });
 
-  describe("markAsProcessing", () => {
+  describe("markAsProcessingByBookmarkId", () => {
     it("should update status to processing", async () => {
       const userId = randomUUID();
       const bookmark = await bookmarkRepo.create({
@@ -142,9 +142,9 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark.id);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
 
-      const transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.status).toBe(TranscriptionStatus.PROCESSING);
     });
 
@@ -163,10 +163,10 @@ describe("TranscriptionRepository", () => {
 
       // Capture time with some margin (1 second before)
       const before = new Date(Date.now() - 1000);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
       const after = new Date(Date.now() + 1000);
 
-      const transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.processing_started_at).toBeDefined();
       expect(transcription?.processing_started_at).toBeInstanceOf(Date);
       expect(transcription?.processing_started_at!.getTime()).toBeGreaterThanOrEqual(before.getTime());
@@ -174,7 +174,7 @@ describe("TranscriptionRepository", () => {
     });
   });
 
-  describe("markAsFailed", () => {
+  describe("markAsFailedByBookmarkId", () => {
     it("should update status to failed with error message", async () => {
       const userId = randomUUID();
       const bookmark = await bookmarkRepo.create({
@@ -187,12 +187,12 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark.id);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const errorMessage = "Deepgram API error: Rate limit exceeded";
-      await transcriptionRepo.markAsFailed(bookmark.id, errorMessage);
+      await transcriptionRepo.markAsFailedByBookmarkId(bookmark.id, errorMessage);
 
-      const transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.status).toBe(TranscriptionStatus.FAILED);
       expect(transcription?.error_message).toBe(errorMessage);
     });
@@ -209,14 +209,14 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark.id);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       // Capture time with some margin
       const before = new Date(Date.now() - 1000);
-      await transcriptionRepo.markAsFailed(bookmark.id, "Test error");
+      await transcriptionRepo.markAsFailedByBookmarkId(bookmark.id, "Test error");
       const after = new Date(Date.now() + 1000);
 
-      const transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.processing_completed_at).toBeDefined();
       expect(transcription?.processing_completed_at).toBeInstanceOf(Date);
       expect(transcription?.processing_completed_at!.getTime()).toBeGreaterThanOrEqual(before.getTime());
@@ -241,7 +241,7 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark.id);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const deepgramResponse = createTestDeepgramResponse();
       const transcriptionData = {
@@ -256,7 +256,7 @@ describe("TranscriptionRepository", () => {
 
       await transcriptionRepo.updateTranscriptionData(bookmark.id, transcriptionData);
 
-      const transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.transcript).toBe(transcriptionData.transcript);
       expect(transcription?.deepgram_summary).toBe(transcriptionData.deepgramSummary);
       expect(transcription?.sentiment).toBe(transcriptionData.sentiment);
@@ -279,15 +279,15 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark.id);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
 
-      // Note: deepgram_response set to null to avoid Encore JSONB deserialization issues
+      // Note: Use factory function to create valid DeepgramResponse
       const transcriptionData = {
         transcript: "Transcript without sentiment.",
         deepgramSummary: null,
         sentiment: null,
         sentimentScore: null,
-        deepgramResponse: null,
+        deepgramResponse: createTestDeepgramResponse(),
         duration: 200,
         confidence: 0.90,
       };
@@ -322,7 +322,7 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark.id);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const deepgramResponse = createTestDeepgramResponse();
       await transcriptionRepo.updateTranscriptionData(bookmark.id, {
@@ -335,7 +335,7 @@ describe("TranscriptionRepository", () => {
         confidence: 0.95,
       });
 
-      const transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.transcript).toBe("Test");
       expect(transcription?.duration).toBe(300);
       // NOTE: deepgram_response cannot be read back due to Encore JSONB limitation
@@ -355,15 +355,15 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark.id);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
 
-      // Note: deepgram_response set to null to avoid Encore JSONB deserialization issues
+      // Note: Use factory function to create valid DeepgramResponse
       await transcriptionRepo.updateTranscriptionData(bookmark.id, {
         transcript: "Test transcript",
         deepgramSummary: null,
         sentiment: null,
         sentimentScore: null,
-        deepgramResponse: null,
+        deepgramResponse: createTestDeepgramResponse(),
         duration: 100,
         confidence: 0.90,
       });
@@ -388,14 +388,14 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark1.id);
-      await transcriptionRepo.markAsProcessing(bookmark1.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark1.id);
 
       await transcriptionRepo.updateTranscriptionData(bookmark1.id, {
         transcript: "Positive",
         deepgramSummary: null,
         sentiment: "positive",
         sentimentScore: 0.9,
-        deepgramResponse: null, // Must be null to avoid Encore JSONB issues
+        deepgramResponse: createTestDeepgramResponse(),
         duration: 100,
         confidence: 0.9,
       });
@@ -416,14 +416,14 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark2.id);
-      await transcriptionRepo.markAsProcessing(bookmark2.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark2.id);
 
       await transcriptionRepo.updateTranscriptionData(bookmark2.id, {
         transcript: "Negative",
         deepgramSummary: null,
         sentiment: "negative",
         sentimentScore: -0.7,
-        deepgramResponse: null, // Must be null to avoid Encore JSONB issues
+        deepgramResponse: createTestDeepgramResponse(),
         duration: 100,
         confidence: 0.9,
       });
@@ -444,14 +444,14 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark3.id);
-      await transcriptionRepo.markAsProcessing(bookmark3.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark3.id);
 
       await transcriptionRepo.updateTranscriptionData(bookmark3.id, {
         transcript: "Neutral",
         deepgramSummary: null,
         sentiment: "neutral",
         sentimentScore: 0.0,
-        deepgramResponse: null, // Must be null to avoid Encore JSONB issues
+        deepgramResponse: createTestDeepgramResponse(),
         duration: 100,
         confidence: 0.9,
       });
@@ -476,16 +476,16 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark.id);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       // Simulate Stage 2 completion
-      // Note: deepgram_response set to null to avoid Encore JSONB deserialization issues
+      // Note: Use factory function to create valid DeepgramResponse
       await transcriptionRepo.updateTranscriptionData(bookmark.id, {
         transcript: "Test transcript",
         deepgramSummary: "Deepgram summary",
         sentiment: "positive",
         sentimentScore: 0.8,
-        deepgramResponse: null,
+        deepgramResponse: createTestDeepgramResponse(),
         duration: 300,
         confidence: 0.95,
       });
@@ -513,15 +513,15 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark.id);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
 
-      // Note: deepgram_response set to null to avoid Encore JSONB deserialization issues
+      // Note: Use factory function to create valid DeepgramResponse
       await transcriptionRepo.updateTranscriptionData(bookmark.id, {
         transcript: "Test",
         deepgramSummary: null,
         sentiment: null,
         sentimentScore: null,
-        deepgramResponse: null,
+        deepgramResponse: createTestDeepgramResponse(),
         duration: 100,
         confidence: 0.9,
       });
@@ -553,7 +553,7 @@ describe("TranscriptionRepository", () => {
       });
 
       await transcriptionRepo.createPending(bookmark.id);
-      await transcriptionRepo.markAsProcessing(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const deepgramResponse = createTestDeepgramResponse();
       const transcriptText = "Original transcript text";
@@ -569,7 +569,7 @@ describe("TranscriptionRepository", () => {
 
       await transcriptionRepo.updateSummary(bookmark.id, "OpenAI summary");
 
-      const transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.transcript).toBe(transcriptText);
       expect(transcription?.sentiment).toBe("positive");
       expect(transcription?.duration).toBe(300);
@@ -700,12 +700,12 @@ describe("TranscriptionRepository", () => {
 
       // Stage 1: Create pending transcription
       await transcriptionRepo.createPending(bookmark.id);
-      let transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      let transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.status).toBe(TranscriptionStatus.PENDING);
 
       // Stage 2: Mark as processing
-      await transcriptionRepo.markAsProcessing(bookmark.id);
-      transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      await transcriptionRepo.markAsProcessingByBookmarkId(bookmark.id);
+      transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.status).toBe(TranscriptionStatus.PROCESSING);
       expect(transcription?.processing_started_at).toBeDefined();
 
@@ -722,7 +722,7 @@ describe("TranscriptionRepository", () => {
       });
 
       // Verify data was stored
-      transcription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      transcription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(transcription?.transcript).toBe("Complete test transcript");
       expect(transcription?.status).toBe(TranscriptionStatus.PROCESSING);
       // NOTE: deepgram_response cannot be read back due to Encore JSONB limitation
@@ -732,7 +732,7 @@ describe("TranscriptionRepository", () => {
       await transcriptionRepo.updateSummary(bookmark.id, "Final OpenAI summary");
 
       // Final verification
-      const finalTranscription = await transcriptionRepo.findByBookmarkId(bookmark.id);
+      const finalTranscription = await transcriptionRepo.findByBookmarkIdInternal(bookmark.id);
       expect(finalTranscription?.summary).toBe("Final OpenAI summary");
       expect(finalTranscription?.status).toBe(TranscriptionStatus.COMPLETED);
       expect(finalTranscription?.processing_completed_at).toBeDefined();

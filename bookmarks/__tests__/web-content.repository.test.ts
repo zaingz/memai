@@ -114,13 +114,13 @@ describe("WebContentRepository", () => {
 
       await webContentRepo.createPending(bookmark.id);
 
-      const found = await webContentRepo.findByBookmarkId(bookmark.id);
+      const found = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(found).toBeDefined();
       expect(found?.bookmark_id).toBe(bookmark.id);
     });
 
     it("should return null for non-existent web content", async () => {
-      const found = await webContentRepo.findByBookmarkId(99999);
+      const found = await webContentRepo.findByBookmarkIdInternal(99999);
       expect(found).toBeNull();
     });
 
@@ -137,7 +137,7 @@ describe("WebContentRepository", () => {
 
       await webContentRepo.createPending(bookmark.id);
 
-      const found = await webContentRepo.findByBookmarkId(bookmark.id);
+      const found = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(found?.raw_markdown).toBeNull();
       expect(found?.summary).toBeNull();
       expect(found?.error_message).toBeNull();
@@ -159,7 +159,7 @@ describe("WebContentRepository", () => {
       });
 
       const created = await webContentRepo.createPending(bookmark.id);
-      const found = await webContentRepo.findById(created.id);
+      const found = await webContentRepo.findById(created.id, userId);
 
       expect(found).toBeDefined();
       expect(found?.id).toBe(created.id);
@@ -167,7 +167,8 @@ describe("WebContentRepository", () => {
     });
 
     it("should return null for non-existent ID", async () => {
-      const found = await webContentRepo.findById(99999);
+      const userId = randomUUID();
+      const found = await webContentRepo.findById(99999, userId);
       expect(found).toBeNull();
     });
   });
@@ -187,7 +188,7 @@ describe("WebContentRepository", () => {
       await webContentRepo.createPending(bookmark.id);
       await webContentRepo.markAsProcessing(bookmark.id);
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.status).toBe(ContentStatus.PROCESSING);
     });
 
@@ -209,7 +210,7 @@ describe("WebContentRepository", () => {
       await webContentRepo.markAsProcessing(bookmark.id);
       const after = new Date(Date.now() + 1000);
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.processing_started_at).toBeDefined();
       expect(webContent?.processing_started_at).toBeInstanceOf(Date);
       expect(webContent?.processing_started_at!.getTime()).toBeGreaterThanOrEqual(before.getTime());
@@ -250,7 +251,7 @@ describe("WebContentRepository", () => {
 
       await webContentRepo.updateContent(bookmark.id, contentData);
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.raw_markdown).toBe(contentData.raw_markdown);
       expect(webContent?.raw_html).toBe(contentData.raw_html);
       expect(webContent?.page_title).toBe(contentData.page_title);
@@ -291,7 +292,7 @@ describe("WebContentRepository", () => {
 
       await webContentRepo.updateContent(bookmark.id, contentData);
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.word_count).toBe(5000);
       expect(webContent?.estimated_reading_minutes).toBe(25);
     });
@@ -322,7 +323,7 @@ describe("WebContentRepository", () => {
         metadata: {},
       });
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.status).toBe(ContentStatus.PROCESSING);
     });
   });
@@ -345,7 +346,7 @@ describe("WebContentRepository", () => {
       const summary = "This is an AI-generated summary of the article.";
       await webContentRepo.updateSummary(bookmark.id, summary);
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.summary).toBe(summary);
     });
   });
@@ -366,7 +367,7 @@ describe("WebContentRepository", () => {
       await webContentRepo.markAsProcessing(bookmark.id);
       await webContentRepo.markAsCompleted(bookmark.id);
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.status).toBe(ContentStatus.COMPLETED);
     });
 
@@ -388,7 +389,7 @@ describe("WebContentRepository", () => {
       await webContentRepo.markAsCompleted(bookmark.id);
       const after = new Date(Date.now() + 1000);
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.processing_completed_at).toBeDefined();
       expect(webContent?.processing_completed_at).toBeInstanceOf(Date);
       expect(webContent?.processing_completed_at!.getTime()).toBeGreaterThanOrEqual(before.getTime());
@@ -414,7 +415,7 @@ describe("WebContentRepository", () => {
       const errorMessage = "FireCrawl API error: Rate limit exceeded";
       await webContentRepo.markAsFailed(bookmark.id, errorMessage);
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.status).toBe(ContentStatus.FAILED);
       expect(webContent?.error_message).toBe(errorMessage);
     });
@@ -437,7 +438,7 @@ describe("WebContentRepository", () => {
       await webContentRepo.markAsFailed(bookmark.id, "Test error");
       const after = new Date(Date.now() + 1000);
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.processing_completed_at).toBeDefined();
       expect(webContent?.processing_completed_at).toBeInstanceOf(Date);
       expect(webContent?.processing_completed_at!.getTime()).toBeGreaterThanOrEqual(before.getTime());
@@ -464,6 +465,7 @@ describe("WebContentRepository", () => {
 
       // List first 3
       const firstPage = await webContentRepo.list({
+        userId,
         limit: 3,
         offset: 0,
       });
@@ -471,6 +473,7 @@ describe("WebContentRepository", () => {
 
       // List next 2
       const secondPage = await webContentRepo.list({
+        userId,
         limit: 3,
         offset: 3,
       });
@@ -509,6 +512,7 @@ describe("WebContentRepository", () => {
 
       // List only pending
       const pending = await webContentRepo.list({
+        userId,
         limit: 10,
         offset: 0,
         status: ContentStatus.PENDING,
@@ -518,6 +522,7 @@ describe("WebContentRepository", () => {
 
       // List only completed
       const completed = await webContentRepo.list({
+        userId,
         limit: 10,
         offset: 0,
         status: ContentStatus.COMPLETED,
@@ -527,7 +532,9 @@ describe("WebContentRepository", () => {
     });
 
     it("should return empty array when no results", async () => {
+      const userId = randomUUID();
       const results = await webContentRepo.list({
+        userId,
         limit: 10,
         offset: 0,
       });
@@ -555,6 +562,7 @@ describe("WebContentRepository", () => {
       }
 
       const results = await webContentRepo.list({
+        userId,
         limit: 10,
         offset: 0,
       });
@@ -709,7 +717,7 @@ describe("WebContentRepository", () => {
 
       // Stage 2: Mark as processing
       await webContentRepo.markAsProcessing(bookmark.id);
-      webContent = (await webContentRepo.findByBookmarkId(bookmark.id))!;
+      webContent = (await webContentRepo.findByBookmarkIdInternal(bookmark.id))!;
       expect(webContent.status).toBe(ContentStatus.PROCESSING);
       expect(webContent.processing_started_at).toBeDefined();
 
@@ -726,7 +734,7 @@ describe("WebContentRepository", () => {
         metadata: { author: "Author" },
       });
 
-      webContent = (await webContentRepo.findByBookmarkId(bookmark.id))!;
+      webContent = (await webContentRepo.findByBookmarkIdInternal(bookmark.id))!;
       expect(webContent.raw_markdown).toBe("# Article Content\n\nThis is the article.");
       expect(webContent.status).toBe(ContentStatus.PROCESSING);
 
@@ -737,7 +745,7 @@ describe("WebContentRepository", () => {
       await webContentRepo.markAsCompleted(bookmark.id);
 
       // Final verification
-      const finalWebContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const finalWebContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(finalWebContent?.summary).toBe("AI-generated summary");
       expect(finalWebContent?.status).toBe(ContentStatus.COMPLETED);
       expect(finalWebContent?.processing_completed_at).toBeDefined();
@@ -767,7 +775,7 @@ describe("WebContentRepository", () => {
       // Simulate failure
       await webContentRepo.markAsFailed(bookmark.id, "FireCrawl timeout");
 
-      const webContent = await webContentRepo.findByBookmarkId(bookmark.id);
+      const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.status).toBe(ContentStatus.FAILED);
       expect(webContent?.error_message).toBe("FireCrawl timeout");
       expect(webContent?.processing_completed_at).toBeDefined();
