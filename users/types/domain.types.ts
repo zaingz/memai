@@ -26,25 +26,3 @@ export interface SafeUser {
   created_at: Date;
   updated_at: Date;
 }
-
-/**
- * JWT token payload structure
- */
-export interface TokenPayload {
-  userID: string; // UUID from Supabase
-  email: string;
-}
-
-/**
- * Helper function to convert User to SafeUser
- */
-export function toSafeUser(user: User): SafeUser {
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    migrated_to_supabase: user.migrated_to_supabase,
-    created_at: user.created_at,
-    updated_at: user.updated_at,
-  };
-}

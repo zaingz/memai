@@ -27,18 +27,13 @@ export const FIRECRAWL_CONFIG = {
     maxDelayMs: 10000,     // Cap at 10 seconds
     exponentialBackoff: true,
   },
-
-  // Rate limiting (adjust based on FireCrawl plan)
-  rateLimits: {
-    requestsPerMinute: 30,
-    concurrentRequests: 5,
-  },
 } as const;
 
 /**
  * Word count thresholds for content classification
+ * Internal use only - used by getContentType()
  */
-export const CONTENT_TYPE_THRESHOLDS = {
+const CONTENT_TYPE_THRESHOLDS = {
   SHORT_POST: 500,      // < 500 words = short post (tweets, reddit comments)
   ARTICLE: 2000,        // 500-2000 words = article (blog posts)
   LONG_FORM: Infinity,  // > 2000 words = long-form (essays, documentation)
@@ -46,8 +41,9 @@ export const CONTENT_TYPE_THRESHOLDS = {
 
 /**
  * Reading speed for time estimation (words per minute)
+ * Internal use only - used by calculateReadingTime()
  */
-export const READING_SPEED_WPM = 200;
+const READING_SPEED_WPM = 200;
 
 /**
  * Determines content type based on word count

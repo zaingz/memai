@@ -39,6 +39,7 @@ export interface AudioDownloadedEvent {
     videoId?: string; // For YouTube
     episodeUrl?: string; // For Podcast
     platform?: string; // For platform-specific tracking
+    geminiFailure?: string; // Gemini error message when falling back to Deepgram
   };
 }
 
@@ -48,17 +49,6 @@ export interface AudioDownloadedEvent {
  * Triggers summary generation
  */
 export interface AudioTranscribedEvent {
-  bookmarkId: number;
-  transcript: string;
-  source: string; // Source type for prompt selection
-}
-
-/**
- * Stage 3: Summary Generation Event
- * Triggered after transcription completes
- * Triggers OpenAI summary generation
- */
-export interface SummaryGenerationEvent {
   bookmarkId: number;
   transcript: string;
   source: string; // Source type for prompt selection
