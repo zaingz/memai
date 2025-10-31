@@ -186,7 +186,7 @@ describe("WebContentRepository", () => {
       });
 
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.status).toBe(ContentStatus.PROCESSING);
@@ -207,7 +207,7 @@ describe("WebContentRepository", () => {
 
       // Capture time with some margin (1 second before)
       const before = new Date(Date.now() - 1000);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
       const after = new Date(Date.now() + 1000);
 
       const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
@@ -231,7 +231,7 @@ describe("WebContentRepository", () => {
       });
 
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const contentData = {
         raw_markdown: "# Test Article\n\nThis is the content.",
@@ -276,7 +276,7 @@ describe("WebContentRepository", () => {
       });
 
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const contentData = {
         raw_markdown: "Very long article content...".repeat(1000),
@@ -309,7 +309,7 @@ describe("WebContentRepository", () => {
       });
 
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       await webContentRepo.updateContent(bookmark.id, {
         raw_markdown: "Content",
@@ -341,7 +341,7 @@ describe("WebContentRepository", () => {
       });
 
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const summary = "This is an AI-generated summary of the article.";
       await webContentRepo.updateSummary(bookmark.id, summary);
@@ -364,8 +364,8 @@ describe("WebContentRepository", () => {
       });
 
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
-      await webContentRepo.markAsCompleted(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
+      await webContentRepo.markAsCompletedByBookmarkId(bookmark.id);
 
       const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.status).toBe(ContentStatus.COMPLETED);
@@ -383,10 +383,10 @@ describe("WebContentRepository", () => {
       });
 
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const before = new Date(Date.now() - 1000);
-      await webContentRepo.markAsCompleted(bookmark.id);
+      await webContentRepo.markAsCompletedByBookmarkId(bookmark.id);
       const after = new Date(Date.now() + 1000);
 
       const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
@@ -410,10 +410,10 @@ describe("WebContentRepository", () => {
       });
 
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const errorMessage = "FireCrawl API error: Rate limit exceeded";
-      await webContentRepo.markAsFailed(bookmark.id, errorMessage);
+      await webContentRepo.markAsFailedByBookmarkId(bookmark.id, errorMessage);
 
       const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.status).toBe(ContentStatus.FAILED);
@@ -432,10 +432,10 @@ describe("WebContentRepository", () => {
       });
 
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       const before = new Date(Date.now() - 1000);
-      await webContentRepo.markAsFailed(bookmark.id, "Test error");
+      await webContentRepo.markAsFailedByBookmarkId(bookmark.id, "Test error");
       const after = new Date(Date.now() + 1000);
 
       const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
@@ -506,8 +506,8 @@ describe("WebContentRepository", () => {
           metadata: null,
         });
         await webContentRepo.createPending(bookmark.id);
-        await webContentRepo.markAsProcessing(bookmark.id);
-        await webContentRepo.markAsCompleted(bookmark.id);
+        await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
+        await webContentRepo.markAsCompletedByBookmarkId(bookmark.id);
       }
 
       // List only pending
@@ -592,7 +592,7 @@ describe("WebContentRepository", () => {
 
       // Create web content
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
       await webContentRepo.updateContent(bookmark.id, {
         raw_markdown: "# Article Content",
         raw_html: "<h1>Article Content</h1>",
@@ -716,7 +716,7 @@ describe("WebContentRepository", () => {
       expect(webContent.status).toBe(ContentStatus.PENDING);
 
       // Stage 2: Mark as processing
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
       webContent = (await webContentRepo.findByBookmarkIdInternal(bookmark.id))!;
       expect(webContent.status).toBe(ContentStatus.PROCESSING);
       expect(webContent.processing_started_at).toBeDefined();
@@ -742,7 +742,7 @@ describe("WebContentRepository", () => {
       await webContentRepo.updateSummary(bookmark.id, "AI-generated summary");
 
       // Stage 5: Mark as completed
-      await webContentRepo.markAsCompleted(bookmark.id);
+      await webContentRepo.markAsCompletedByBookmarkId(bookmark.id);
 
       // Final verification
       const finalWebContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
@@ -770,10 +770,10 @@ describe("WebContentRepository", () => {
       });
 
       await webContentRepo.createPending(bookmark.id);
-      await webContentRepo.markAsProcessing(bookmark.id);
+      await webContentRepo.markAsProcessingByBookmarkId(bookmark.id);
 
       // Simulate failure
-      await webContentRepo.markAsFailed(bookmark.id, "FireCrawl timeout");
+      await webContentRepo.markAsFailedByBookmarkId(bookmark.id, "FireCrawl timeout");
 
       const webContent = await webContentRepo.findByBookmarkIdInternal(bookmark.id);
       expect(webContent?.status).toBe(ContentStatus.FAILED);

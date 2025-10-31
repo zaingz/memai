@@ -242,7 +242,10 @@ describe("Audio Transcription Processor", () => {
 
       mockDownload.mockRejectedValue(new Error("File not found in bucket"));
 
-      await handleAudioTranscription(event);
+      // BaseProcessor re-throws errors
+      await expect(handleAudioTranscription(event)).rejects.toThrow(
+        "Audio Transcription Processor failed: File not found in bucket"
+      );
 
       expect(mockTranscribe).not.toHaveBeenCalled();
       expect(mockPublish).not.toHaveBeenCalled();
@@ -297,7 +300,10 @@ describe("Audio Transcription Processor", () => {
       mockDownload.mockResolvedValue(Buffer.from("test"));
       mockTranscribe.mockRejectedValue(new Error("Deepgram API error"));
 
-      await handleAudioTranscription(event);
+      // BaseProcessor re-throws errors
+      await expect(handleAudioTranscription(event)).rejects.toThrow(
+        "Audio Transcription Processor failed: Deepgram API error"
+      );
 
       expect(mockUpdateTranscriptionData).not.toHaveBeenCalled();
       expect(mockPublish).not.toHaveBeenCalled();
@@ -395,7 +401,10 @@ describe("Audio Transcription Processor", () => {
         new Error("Database connection failed")
       );
 
-      await handleAudioTranscription(event);
+      // BaseProcessor re-throws errors
+      await expect(handleAudioTranscription(event)).rejects.toThrow(
+        "Audio Transcription Processor failed: Database connection failed"
+      );
 
       expect(mockPublish).not.toHaveBeenCalled();
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
@@ -451,7 +460,10 @@ describe("Audio Transcription Processor", () => {
       mockRemove.mockResolvedValue(undefined);
       mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleAudioTranscription(event);
+      // BaseProcessor re-throws errors
+      await expect(handleAudioTranscription(event)).rejects.toThrow(
+        "Audio Transcription Processor failed: Transcription failed"
+      );
 
       expect(mockRemove).toHaveBeenCalledWith("audio-10-failcleanup.mp3");
       expect(mockMarkAsFailed).toHaveBeenCalled();
@@ -470,7 +482,10 @@ describe("Audio Transcription Processor", () => {
       mockRemove.mockRejectedValue(new Error("Bucket remove failed"));
       mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleAudioTranscription(event);
+      // BaseProcessor re-throws errors
+      await expect(handleAudioTranscription(event)).rejects.toThrow(
+        "Audio Transcription Processor failed: Transcription failed"
+      );
 
       expect(mockRemove).toHaveBeenCalled();
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
@@ -544,7 +559,10 @@ describe("Audio Transcription Processor", () => {
       mockPublish.mockRejectedValue(new Error("Topic publish failed"));
       mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleAudioTranscription(event);
+      // BaseProcessor re-throws errors
+      await expect(handleAudioTranscription(event)).rejects.toThrow(
+        "Audio Transcription Processor failed: Topic publish failed"
+      );
 
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
         13,
@@ -633,8 +651,9 @@ describe("Audio Transcription Processor", () => {
 
       await handleAudioTranscription(event);
 
+      // BaseProcessor logs with processor name prefix
       expect(mockLog.info).toHaveBeenCalledWith(
-        "Transcription completed",
+        "Audio Transcription Processor: Transcription completed",
         expect.objectContaining({
           bookmarkId: 100,
           confidence: 0.95,
@@ -654,14 +673,20 @@ describe("Audio Transcription Processor", () => {
       mockDownload.mockResolvedValue(Buffer.from("test"));
       mockTranscribe.mockRejectedValue(transcriptionError);
       mockRemove.mockResolvedValue(undefined);
+      mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleAudioTranscription(event);
+      // BaseProcessor re-throws errors
+      await expect(handleAudioTranscription(event)).rejects.toThrow(
+        "Audio Transcription Processor failed: Deepgram API error"
+      );
 
+      // BaseProcessor logs with processor name prefix
       expect(mockLog.error).toHaveBeenCalledWith(
         transcriptionError,
-        "Audio transcription failed",
+        "Audio Transcription Processor failed",
         expect.objectContaining({
-          bookmarkId: 101,
+          event,
+          errorMessage: "Deepgram API error",
         })
       );
     });
@@ -677,13 +702,18 @@ describe("Audio Transcription Processor", () => {
       const downloadError = new Error("File not found in bucket");
       mockDownload.mockRejectedValue(downloadError);
 
-      await handleAudioTranscription(event);
+      // BaseProcessor re-throws errors
+      await expect(handleAudioTranscription(event)).rejects.toThrow(
+        "Audio Transcription Processor failed: File not found in bucket"
+      );
 
+      // BaseProcessor logs with processor name prefix
       expect(mockLog.error).toHaveBeenCalledWith(
         downloadError,
-        "Audio transcription failed",
+        "Audio Transcription Processor failed",
         expect.objectContaining({
-          bookmarkId: 102,
+          event,
+          errorMessage: "File not found in bucket",
         })
       );
     });
@@ -831,7 +861,10 @@ describe("Audio Transcription Processor", () => {
       mockRemove.mockResolvedValue(undefined);
       mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleAudioTranscription(event);
+      // BaseProcessor re-throws errors
+      await expect(handleAudioTranscription(event)).rejects.toThrow(
+        "Audio Transcription Processor failed: Deepgram API error"
+      );
 
       // Should mark as failed
       expect(mockMarkAsFailed).toHaveBeenCalledWith(

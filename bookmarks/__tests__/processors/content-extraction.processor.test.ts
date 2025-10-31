@@ -65,6 +65,7 @@ vi.mock("../../services/firecrawl.service", () => ({
 vi.mock("../../repositories/web-content.repository", () => ({
   WebContentRepository: class MockWebContentRepository {
     findByBookmarkId = mockFindByBookmarkId;
+    findByBookmarkIdInternal = mockFindByBookmarkId; // Use same mock for internal variant
     createPending = mockCreatePending;
     markAsProcessing = mockMarkAsProcessing;
     updateContent = mockUpdateContent;
@@ -103,8 +104,9 @@ describe("Content Extraction Processor", () => {
 
       expect(mockScrape).not.toHaveBeenCalled();
       expect(mockPublish).not.toHaveBeenCalled();
+      // BaseProcessor logs with processor name prefix
       expect(mockLog.info).toHaveBeenCalledWith(
-        "Skipping content extraction for non-textual source",
+        "Content Extraction Processor: Skipping content extraction for non-textual source",
         expect.objectContaining({
           bookmarkId: 1,
           source: BookmarkSource.YOUTUBE,
@@ -507,7 +509,10 @@ describe("Content Extraction Processor", () => {
       mockScrape.mockRejectedValue(new Error("FireCrawl API error: 500"));
       mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleContentExtraction(event);
+      // BaseProcessor re-throws errors
+      await expect(handleContentExtraction(event)).rejects.toThrow(
+        "Content Extraction Processor failed: FireCrawl API error: 500"
+      );
 
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
         30,
@@ -536,7 +541,10 @@ describe("Content Extraction Processor", () => {
       });
       mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleContentExtraction(event);
+      // BaseProcessor re-throws errors
+      await expect(handleContentExtraction(event)).rejects.toThrow(
+        /Content Extraction Processor failed:.*missing markdown/
+      );
 
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
         31,
@@ -565,7 +573,10 @@ describe("Content Extraction Processor", () => {
       });
       mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleContentExtraction(event);
+      // BaseProcessor re-throws errors
+      await expect(handleContentExtraction(event)).rejects.toThrow(
+        /Content Extraction Processor failed:.*unsuccessful response/
+      );
 
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
         32,
@@ -586,7 +597,10 @@ describe("Content Extraction Processor", () => {
       mockScrape.mockRejectedValue("String error");
       mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleContentExtraction(event);
+      // BaseProcessor re-throws errors
+      await expect(handleContentExtraction(event)).rejects.toThrow(
+        "Content Extraction Processor failed: String error"
+      );
 
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
         33,
@@ -652,15 +666,17 @@ describe("Content Extraction Processor", () => {
       mockScrape.mockRejectedValue(error);
       mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleContentExtraction(event);
+      // BaseProcessor re-throws errors
+      await expect(handleContentExtraction(event)).rejects.toThrow(
+        "Content Extraction Processor failed: Test error"
+      );
 
+      // BaseProcessor logs with processor name prefix
       expect(mockLog.error).toHaveBeenCalledWith(
         error,
-        "Content extraction failed",
+        "Content Extraction Processor failed",
         expect.objectContaining({
-          bookmarkId: 41,
-          url: "https://blog.example.com/error-logging",
-          source: BookmarkSource.BLOG,
+          event,
           errorMessage: "Test error",
         })
       );

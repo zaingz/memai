@@ -55,6 +55,7 @@ describe("DailyDigestService", () => {
       create: vi.fn(),
       markAsProcessing: vi.fn(),
       markAsCompleted: vi.fn(),
+      markAsCompletedWithContent: vi.fn(),
       getCompletedTranscriptionsInRange: vi.fn(),
       getCompletedWebContentInRange: vi.fn(),
       list: vi.fn(),
@@ -186,7 +187,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.markAsProcessing.mockResolvedValue(undefined);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Generated digest");
 
       const result = await service.generateDailyDigest({
@@ -224,7 +225,7 @@ describe("DailyDigestService", () => {
           articleCount: 0,
         })
       );
-      expect(mockRepo.markAsCompleted).toHaveBeenCalledWith(
+      expect(mockRepo.markAsCompletedWithContent).toHaveBeenCalledWith(
         failedDigest.id,
         "Generated digest",
         600, // Total duration
@@ -250,7 +251,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.markAsProcessing.mockResolvedValue(undefined);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Regenerated digest");
 
       const result = await service.generateDailyDigest({
@@ -283,7 +284,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("New digest content");
 
       const result = await service.generateDailyDigest({
@@ -327,7 +328,7 @@ describe("DailyDigestService", () => {
           articleCount: 0,
         })
       );
-      expect(mockRepo.markAsCompleted).toHaveBeenCalledWith(
+      expect(mockRepo.markAsCompletedWithContent).toHaveBeenCalledWith(
         newDigest.id,
         "New digest content",
         900, // 300 + 400 + 200
@@ -349,7 +350,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue([]);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
 
       const result = await service.generateDailyDigest({
         date: testDate,
@@ -368,7 +369,7 @@ describe("DailyDigestService", () => {
       // Should not call map-reduce for empty list
       expect(mockGenerateDigest).not.toHaveBeenCalled();
 
-      expect(mockRepo.markAsCompleted).toHaveBeenCalledWith(
+      expect(mockRepo.markAsCompletedWithContent).toHaveBeenCalledWith(
         newDigest.id,
         null,
         0,
@@ -394,7 +395,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Digest");
 
       await service.generateDailyDigest({
@@ -428,7 +429,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Digest");
 
       await service.generateDailyDigest({
@@ -436,7 +437,7 @@ describe("DailyDigestService", () => {
         forceRegenerate: false,
       });
 
-      expect(mockRepo.markAsCompleted).toHaveBeenCalledWith(
+      expect(mockRepo.markAsCompletedWithContent).toHaveBeenCalledWith(
         newDigest.id,
         "Digest",
         900, // 150 + 300 + 450
@@ -467,7 +468,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue(webContent);
       mockRepo.create.mockResolvedValue(newDigest);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Mixed content digest");
 
       const result = await service.generateDailyDigest({
@@ -489,7 +490,7 @@ describe("DailyDigestService", () => {
       );
 
       // Verify total duration only includes audio (300 + 200)
-      expect(mockRepo.markAsCompleted).toHaveBeenCalledWith(
+      expect(mockRepo.markAsCompletedWithContent).toHaveBeenCalledWith(
         newDigest.id,
         "Mixed content digest",
         500, // Only audio duration
@@ -562,7 +563,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Digest");
 
       await service.generateDailyDigest({
@@ -654,7 +655,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Digest");
 
       await expect(
@@ -675,7 +676,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue([]); // No web content
       mockRepo.create.mockResolvedValue(newDigest);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
       mockGenerateDigest.mockResolvedValue("Global digest");
 
       const result = await service.generateDailyDigest({
@@ -841,7 +842,7 @@ describe("DailyDigestService", () => {
       mockRepo.getCompletedTranscriptionsInRange.mockResolvedValue(transcriptions);
       mockRepo.getCompletedWebContentInRange.mockResolvedValue([]);
       mockRepo.create.mockResolvedValue(newDigest);
-      mockRepo.markAsCompleted.mockResolvedValue(undefined);
+      mockRepo.markAsCompletedWithContent.mockResolvedValue(undefined);
 
       // Mock quick map-reduce completion
       mockGenerateDigest.mockResolvedValue("Fast digest");

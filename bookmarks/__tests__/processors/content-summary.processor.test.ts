@@ -299,7 +299,10 @@ describe("Content Summary Processor", () => {
       mockGetContentType.mockReturnValue("article" as ContentType);
       mockGenerateSummary.mockRejectedValue(new Error("OpenAI API rate limit exceeded"));
 
-      await handleContentSummary(event);
+      // BaseProcessor re-throws errors, so expect promise rejection
+      await expect(handleContentSummary(event)).rejects.toThrow(
+        "Content Summary Processor failed: OpenAI API rate limit exceeded"
+      );
 
       expect(mockUpdateSummary).not.toHaveBeenCalled();
       expect(mockMarkAsCompleted).not.toHaveBeenCalled();
@@ -362,7 +365,10 @@ describe("Content Summary Processor", () => {
       mockGenerateSummary.mockResolvedValue("Summary");
       mockUpdateSummary.mockRejectedValue(new Error("Database connection failed"));
 
-      await handleContentSummary(event);
+      // BaseProcessor re-throws errors, so expect promise rejection
+      await expect(handleContentSummary(event)).rejects.toThrow(
+        "Content Summary Processor failed: Database connection failed"
+      );
 
       expect(mockMarkAsCompleted).not.toHaveBeenCalled();
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
@@ -384,7 +390,10 @@ describe("Content Summary Processor", () => {
       mockGetContentType.mockReturnValue("article" as ContentType);
       mockGenerateSummary.mockRejectedValue(new Error("Generation failed"));
 
-      await handleContentSummary(event);
+      // BaseProcessor re-throws errors, so expect promise rejection
+      await expect(handleContentSummary(event)).rejects.toThrow(
+        "Content Summary Processor failed: Generation failed"
+      );
 
       expect(mockUpdateSummary).not.toHaveBeenCalled();
       expect(mockMarkAsCompleted).not.toHaveBeenCalled();
@@ -406,7 +415,10 @@ describe("Content Summary Processor", () => {
       mockGenerateSummary.mockResolvedValue("Summary");
       mockUpdateSummary.mockRejectedValue(new Error("Storage failed"));
 
-      await handleContentSummary(event);
+      // BaseProcessor re-throws errors, so expect promise rejection
+      await expect(handleContentSummary(event)).rejects.toThrow(
+        "Content Summary Processor failed: Storage failed"
+      );
 
       expect(mockMarkAsCompleted).not.toHaveBeenCalled();
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
@@ -426,7 +438,10 @@ describe("Content Summary Processor", () => {
       mockGetContentType.mockReturnValue("short_post" as ContentType);
       mockGenerateSummary.mockRejectedValue("String error");
 
-      await handleContentSummary(event);
+      // BaseProcessor re-throws errors, so expect promise rejection
+      await expect(handleContentSummary(event)).rejects.toThrow(
+        "Content Summary Processor failed: String error"
+      );
 
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
         16,
@@ -541,8 +556,15 @@ describe("Content Summary Processor", () => {
 
       await handleContentSummary(event);
 
+      // BaseProcessor logs start with processor name
       expect(mockLog.info).toHaveBeenCalledWith(
-        "Starting content summarization",
+        "Content Summary Processor started",
+        expect.objectContaining({ event })
+      );
+
+      // logStep() adds processor name prefix
+      expect(mockLog.info).toHaveBeenCalledWith(
+        "Content Summary Processor: Starting content summarization",
         expect.objectContaining({
           bookmarkId: 100,
           wordCount: 700,
@@ -551,7 +573,7 @@ describe("Content Summary Processor", () => {
       );
 
       expect(mockLog.info).toHaveBeenCalledWith(
-        "Content type classified",
+        "Content Summary Processor: Content type classified",
         expect.objectContaining({
           bookmarkId: 100,
           contentType: "article",
@@ -560,7 +582,7 @@ describe("Content Summary Processor", () => {
       );
 
       expect(mockLog.info).toHaveBeenCalledWith(
-        "Summary generated successfully",
+        "Content Summary Processor: Summary generated successfully",
         expect.objectContaining({
           bookmarkId: 100,
           summaryLength: expect.any(Number),
@@ -569,11 +591,17 @@ describe("Content Summary Processor", () => {
       );
 
       expect(mockLog.info).toHaveBeenCalledWith(
-        "Content summarization completed",
+        "Content Summary Processor: Content summarization completed",
         expect.objectContaining({
           bookmarkId: 100,
           summaryLength: expect.any(Number),
         })
+      );
+
+      // BaseProcessor logs completion
+      expect(mockLog.info).toHaveBeenCalledWith(
+        "Content Summary Processor completed",
+        expect.objectContaining({ event })
       );
     });
 
@@ -589,15 +617,18 @@ describe("Content Summary Processor", () => {
       mockGetContentType.mockReturnValue("article" as ContentType);
       mockGenerateSummary.mockRejectedValue(openaiError);
 
-      await handleContentSummary(event);
+      // BaseProcessor re-throws errors, so expect promise rejection
+      await expect(handleContentSummary(event)).rejects.toThrow(
+        "Content Summary Processor failed: OpenAI API rate limit exceeded"
+      );
 
+      // BaseProcessor logs errors with processor name
       expect(mockLog.error).toHaveBeenCalledWith(
         openaiError,
-        "Content summarization failed",
+        "Content Summary Processor failed",
         expect.objectContaining({
-          bookmarkId: 101,
-          wordCount: 500,
-          source: BookmarkSource.BLOG,
+          event,
+          errorMessage: "OpenAI API rate limit exceeded",
         })
       );
     });
@@ -700,7 +731,10 @@ describe("Content Summary Processor", () => {
       mockGenerateSummary.mockRejectedValue(new Error("OpenAI timeout"));
       mockMarkAsFailed.mockResolvedValue(undefined);
 
-      await handleContentSummary(event);
+      // BaseProcessor re-throws errors, so expect promise rejection
+      await expect(handleContentSummary(event)).rejects.toThrow(
+        "Content Summary Processor failed: OpenAI timeout"
+      );
 
       // Should mark as failed
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
