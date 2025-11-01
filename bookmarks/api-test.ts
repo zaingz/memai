@@ -6,6 +6,7 @@ import { bookmarkCreatedTopic } from "./events/bookmark-created.events";
 import { BookmarkSource } from "./types";
 import { DailyDigestRepository } from "./repositories/daily-digest.repository";
 import { DailyDigestService } from "./services/daily-digest.service";
+import { DailyDigest } from "./types/daily-digest.types";
 
 /**
  * TEST ENDPOINT - FOR DEVELOPMENT ONLY
@@ -87,7 +88,7 @@ export interface GenerateDigestTestRequest {
 }
 
 export interface GenerateDigestTestResponse {
-  digest: any; // DailyDigest type
+  digest: DailyDigest;
   message: string;
 }
 

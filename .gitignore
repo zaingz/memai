@@ -17,3 +17,11 @@ node_modules
 # Frontend (deployed separately to Vercel)
 frontend/
 
+# IDE-specific files
+.cursor/
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+

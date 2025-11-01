@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { BookmarkSource } from "../../types/domain.types";
+import { BookmarkSource, TranscriptionStatus } from "../../types/domain.types";
 import type { Bookmark, Transcription } from "../../types/domain.types";
 
 // Hoist mock functions for use in module mocks
@@ -95,7 +95,8 @@ describe("Bookmarks CRUD API", () => {
     title: `Title ${id}`,
     source,
     client_time: new Date(),
-    server_time: new Date(),
+    created_at: new Date(),
+    updated_at: new Date(),
     metadata: null,
   });
 
@@ -391,13 +392,14 @@ describe("Bookmarks CRUD API", () => {
         sentiment_score: 0.85,
         duration: 180,
         confidence: 0.95,
-        status: "completed",
+        status: TranscriptionStatus.COMPLETED,
         error_message: null,
         deepgram_response: {} as any,
         created_at: new Date(),
         updated_at: new Date(),
         processing_started_at: new Date(),
         processing_completed_at: new Date(),
+        transcription_method: null,
       };
 
       mockBookmarkFindById.mockResolvedValue(mockBookmark);

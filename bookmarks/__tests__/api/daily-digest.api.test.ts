@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { DigestStatus } from "../../types/daily-digest.types";
 import type { DailyDigest } from "../../types/daily-digest.types";
 
 // Hoist mock functions for use in module mocks
@@ -80,8 +81,16 @@ describe("Daily Digest API", () => {
     user_id: mockUserId,
     digest_date: date,
     digest_content: content,
-    summary_count: 5,
-    status: content ? "completed" : "pending",
+    bookmark_count: 5,
+    status: content ? DigestStatus.COMPLETED : DigestStatus.PENDING,
+    error_message: null,
+    sources_breakdown: null,
+    date_range_start: null,
+    date_range_end: null,
+    total_duration: null,
+    processing_metadata: null,
+    processing_started_at: null,
+    processing_completed_at: null,
     created_at: new Date(),
     updated_at: new Date(),
   });
@@ -94,7 +103,7 @@ describe("Daily Digest API", () => {
       const mockDigest = createMockDigest(1, yesterday, "Yesterday's digest");
       mockGenerateDailyDigest.mockResolvedValue(mockDigest);
 
-      const result = await api.generateDailyDigest();
+      const result = await api.generateDailyDigest({});
 
       expect(mockGetDigestDateRange).toHaveBeenCalled();
       expect(mockGenerateDailyDigest).toHaveBeenCalledWith({
@@ -131,7 +140,7 @@ describe("Daily Digest API", () => {
       const mockDigest = createMockDigest(3, yesterday, null);
       mockGenerateDailyDigest.mockResolvedValue(mockDigest);
 
-      const result = await api.generateDailyDigest();
+      const result = await api.generateDailyDigest({});
 
       expect(result.digest).toEqual(mockDigest);
       expect(result.message).toBe("Daily digest scaffolding completed (summarization pending)");
@@ -152,7 +161,7 @@ describe("Daily Digest API", () => {
       mockGetDigestDateRange.mockReturnValue({ digestDate: yesterday });
       mockGenerateDailyDigest.mockRejectedValue(new Error("No bookmarks found"));
 
-      await expect(api.generateDailyDigest()).rejects.toThrow(
+      await expect(api.generateDailyDigest({})).rejects.toThrow(
         "Failed to generate daily digest: No bookmarks found"
       );
     });
@@ -160,7 +169,7 @@ describe("Daily Digest API", () => {
     it("should require authentication", async () => {
       mockGetAuthData.mockReturnValue(null);
 
-      await expect(api.generateDailyDigest()).rejects.toThrow("Authentication required");
+      await expect(api.generateDailyDigest({})).rejects.toThrow("Authentication required");
       expect(mockGenerateDailyDigest).not.toHaveBeenCalled();
     });
 
@@ -169,7 +178,7 @@ describe("Daily Digest API", () => {
       mockGetDigestDateRange.mockReturnValue({ digestDate: yesterday });
       mockGenerateDailyDigest.mockResolvedValue(createMockDigest(1, yesterday));
 
-      await api.generateDailyDigest();
+      await api.generateDailyDigest({});
 
       expect(mockGenerateDailyDigest).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -326,7 +335,7 @@ describe("Daily Digest API", () => {
       mockGetDigestDateRange.mockReturnValue({ digestDate });
       mockGenerateDailyDigest.mockResolvedValue(createMockDigest(1, digestDate));
 
-      await api.generateDailyDigest();
+      await api.generateDailyDigest({});
 
       expect(mockGenerateDailyDigest).toHaveBeenCalledWith(
         expect.objectContaining({ userId: user1 })
@@ -369,7 +378,7 @@ describe("Daily Digest API", () => {
       mockGetDigestDateRange.mockReturnValue({ digestDate: new Date() });
       mockGenerateDailyDigest.mockRejectedValue(new Error("Service unavailable"));
 
-      await expect(api.generateDailyDigest()).rejects.toThrow(
+      await expect(api.generateDailyDigest({})).rejects.toThrow(
         "Failed to generate daily digest: Service unavailable"
       );
     });
@@ -386,7 +395,7 @@ describe("Daily Digest API", () => {
       mockGetDigestDateRange.mockReturnValue({ digestDate: new Date() });
       mockGenerateDailyDigest.mockRejectedValue("String error");
 
-      await expect(api.generateDailyDigest()).rejects.toThrow(
+      await expect(api.generateDailyDigest({})).rejects.toThrow(
         "Failed to generate daily digest: String error"
       );
     });
