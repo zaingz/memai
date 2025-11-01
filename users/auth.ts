@@ -120,9 +120,16 @@ export const auth = authHandler<AuthParams, AuthData>(
 );
 
 /**
- * Gateway configuration with auth handler
+ * Gateway configuration with auth handler and CORS
  * This makes the auth handler available to all services in the application
+ * and allows cross-origin requests from the frontend
  */
 export const gateway = new Gateway({
   authHandler: auth,
+  cors: {
+    allowOriginsWithCredentials: [
+      "https://frontend-zaingzs-projects.vercel.app",
+      "http://localhost:5173", // Local development
+    ],
+  },
 });
