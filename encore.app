@@ -14,7 +14,9 @@
 			"http://localhost:5174",
 			"http://localhost:5175",
 			"http://localhost:3000",
-			"https://frontend-zaingzs-projects.vercel.app"
+			"https://frontend-zaingzs-projects.vercel.app",
+			"https://frontend-*.vercel.app",
+			"https://*-zaingzs-projects.vercel.app"
 		]
 	}
 }

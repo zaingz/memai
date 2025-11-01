@@ -29,6 +29,9 @@ export const encoreClient = new Client(apiBaseUrl, {
     }
     return undefined;
   },
+  requestInit: {
+    credentials: 'include', // Ensure credentials are sent with all requests
+  },
 });
 
 // Helper to set auth token
