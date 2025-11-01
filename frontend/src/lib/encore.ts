@@ -35,6 +35,7 @@ export const encoreClient = new Client(apiBaseUrl, {
 // Helper to set auth token
 export function setAuthToken(token: string | null) {
   authToken = token;
+  console.log('[Auth] Token updated:', token ? `${token.substring(0, 20)}...` : 'null');
 }
 
 // Auto-attach token on app load
