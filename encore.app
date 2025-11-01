@@ -20,4 +20,4 @@
 			"https://*-zaingzs-projects.vercel.app"
 		]
 	}
-}# CORS config updated
+}
