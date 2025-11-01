@@ -7,6 +7,7 @@ import { audioDownloadedTopic } from "../events/audio-downloaded.events";
 import { audioTranscribedTopic } from "../events/audio-transcribed.events";
 import { BookmarkSourceClassifiedEvent } from "../types";
 import { PodcastDownloaderService } from "../services/podcast-downloader.service";
+import { YouTubeDownloaderService } from "../services/youtube-downloader.service";
 import { GeminiService } from "../services/gemini.service";
 import { TranscriptionRepository } from "../repositories/transcription.repository";
 import { extractYouTubeVideoId } from "../utils/youtube-url.util";
@@ -19,14 +20,17 @@ const geminiApiKey = secret("GeminiApiKey");
 
 // Initialize services
 const podcastDownloader = new PodcastDownloaderService();
+const youtubeDownloader = new YouTubeDownloaderService();
 const geminiService = new GeminiService(geminiApiKey());
 const transcriptionRepo = new TranscriptionRepository(db);
 
 /**
  * Unified Audio Download Processor
  * Handles audio processing for different sources:
- * - YouTube: Uses Gemini API for direct transcription (no download)
+ * - YouTube: Uses Gemini API for direct transcription, falls back to Deepgram if Gemini fails
  * - Podcast: Downloads audio and processes with Deepgram
+ *
+ * State-of-the-art approach: Gemini (fast, 30s) → Deepgram (highest accuracy, 5.26% WER)
  *
  * Exported for testing purposes
  */
@@ -69,7 +73,7 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
     let metadata: Record<string, string> = {};
 
     if (source === BookmarkSource.YOUTUBE) {
-      // YouTube-specific processing with Gemini (Gemini ONLY - no fallback)
+      // YouTube-specific processing: Gemini first, Deepgram fallback
       const videoId = extractYouTubeVideoId(url);
       if (!videoId) {
         throw new Error("Invalid YouTube URL: could not extract video ID");
@@ -80,8 +84,39 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
       const geminiResult = await geminiService.transcribeYouTubeVideo(videoUrl, videoId);
 
       if (geminiResult.error) {
-        // Gemini failed - mark as failed (no fallback)
-        throw new Error(`Gemini transcription failed: ${geminiResult.error}`);
+        // Gemini failed - fall back to Deepgram (state-of-the-art 5.26% WER)
+        log.warn("Gemini transcription failed, falling back to Deepgram", {
+          bookmarkId,
+          videoId,
+          geminiError: geminiResult.error,
+        });
+
+        // Download audio and upload to bucket for Deepgram processing
+        audioBucketKey = await youtubeDownloader.downloadAndUpload(
+          videoId,
+          bookmarkId
+        );
+
+        log.info("YouTube audio downloaded for Deepgram fallback", {
+          bookmarkId,
+          videoId,
+          audioBucketKey,
+        });
+
+        // Publish to audio-downloaded topic for Deepgram processing
+        await audioDownloadedTopic.publish({
+          bookmarkId,
+          audioBucketKey,
+          source,
+          metadata: { videoId, geminiFailure: geminiResult.error },
+        });
+
+        log.info("Published to Deepgram processing stage", {
+          bookmarkId,
+          videoId,
+        });
+
+        return; // Exit - Deepgram stage will handle transcription
       }
 
       // SUCCESS: Gemini worked! Store transcript

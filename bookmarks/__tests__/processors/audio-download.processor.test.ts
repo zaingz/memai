@@ -3,10 +3,10 @@
  *
  * Unit tests for the unified audio download processor that:
  * - Filters sources that require audio processing
- * - YouTube: Uses Gemini API for direct transcription (Gemini ONLY - no yt-dlp fallback)
+ * - YouTube: Uses Gemini API first, falls back to Deepgram if Gemini fails (state-of-the-art)
  * - Podcast: Downloads audio using yt-dlp and transcribes with Deepgram
  * - Ensures idempotency (skips duplicate processing)
- * - Publishes audio-transcribed events (YouTube) or audio-downloaded events (Podcast)
+ * - Publishes audio-transcribed events (YouTube/Gemini) or audio-downloaded events (Podcast/Deepgram fallback)
  * - Cleans up on failures
  */
 
@@ -130,8 +130,8 @@ describe("Audio Download Processor", () => {
 
   /**
    * Helper: Mock Gemini failure
-   * NOTE: With Gemini-only mode, failures should mark transcription as failed (no fallback)
-   * These helper mocks are kept for legacy test compatibility (podcasts still use yt-dlp)
+   * NOTE: With Gemini → Deepgram fallback, failures should trigger YouTube download + Deepgram
+   * These helper mocks are used for testing the fallback chain
    */
   const mockGeminiFailure = (videoId: string) => {
     mockBuildYouTubeUrl.mockReturnValue(`https://www.youtube.com/watch?v=${videoId}`);
@@ -354,7 +354,7 @@ describe("Audio Download Processor", () => {
       expect(mockPublish).not.toHaveBeenCalled(); // audio-downloaded topic
     });
 
-    it("should mark as failed when Gemini fails (Gemini ONLY - no fallback)", async () => {
+    it("should fall back to Deepgram when Gemini fails (state-of-the-art fallback)", async () => {
       const event = {
         bookmarkId: 51,
         url: "https://www.youtube.com/watch?v=gemini-fail",
@@ -367,6 +367,49 @@ describe("Audio Download Processor", () => {
       mockMarkAsProcessing.mockResolvedValue(undefined);
       mockExtractYouTubeVideoId.mockReturnValue("gemini-fail");
       mockGeminiFailure("gemini-fail");
+      mockYouTubeDownloadAndUpload.mockResolvedValue("audio-51-gemini-fail.mp3");
+      mockPublish.mockResolvedValue("msg-deepgram-fallback");
+
+      await handleAudioDownload(event);
+
+      // Verify Gemini was attempted first
+      expect(mockGeminiTranscribeYouTubeVideo).toHaveBeenCalled();
+
+      // Verify fallback to Deepgram: download audio
+      expect(mockYouTubeDownloadAndUpload).toHaveBeenCalledWith("gemini-fail", 51);
+
+      // Verify audio-downloaded event published for Deepgram processing
+      expect(mockPublish).toHaveBeenCalledWith({
+        bookmarkId: 51,
+        audioBucketKey: "audio-51-gemini-fail.mp3",
+        source: BookmarkSource.YOUTUBE,
+        metadata: { videoId: "gemini-fail", geminiFailure: "Private video" },
+      });
+
+      // Verify Gemini data was NOT stored (it failed)
+      expect(mockUpdateGeminiTranscriptionData).not.toHaveBeenCalled();
+      expect(mockAudioTranscribedPublish).not.toHaveBeenCalled();
+
+      // Verify transcription was NOT marked as failed (fallback in progress)
+      expect(mockMarkAsFailed).not.toHaveBeenCalled();
+    });
+
+    it("should mark as failed when both Gemini and YouTube download fail", async () => {
+      const event = {
+        bookmarkId: 52,
+        url: "https://www.youtube.com/watch?v=double-fail",
+        source: BookmarkSource.YOUTUBE,
+        title: "Unavailable Video",
+      };
+
+      mockFindByBookmarkId.mockResolvedValue(null);
+      mockCreatePending.mockResolvedValue(undefined);
+      mockMarkAsProcessing.mockResolvedValue(undefined);
+      mockExtractYouTubeVideoId.mockReturnValue("double-fail");
+      mockGeminiFailure("double-fail");
+      mockYouTubeDownloadAndUpload.mockRejectedValue(
+        new Error("Failed to download YouTube audio: Video not available")
+      );
       mockMarkAsFailed.mockResolvedValue(undefined);
 
       await handleAudioDownload(event);
@@ -374,18 +417,17 @@ describe("Audio Download Processor", () => {
       // Verify Gemini was attempted
       expect(mockGeminiTranscribeYouTubeVideo).toHaveBeenCalled();
 
-      // Verify transcription was marked as failed (Gemini ONLY - no fallback)
+      // Verify YouTube download was attempted (fallback)
+      expect(mockYouTubeDownloadAndUpload).toHaveBeenCalledWith("double-fail", 52);
+
+      // Verify transcription marked as failed when both methods fail
       expect(mockMarkAsFailed).toHaveBeenCalledWith(
-        51,
-        "Audio download failed: Gemini transcription failed: Private video"
+        52,
+        "Audio download failed: Failed to download YouTube audio: Video not available"
       );
 
-      // Verify NO fallback to yt-dlp
-      expect(mockYouTubeDownloadAndUpload).not.toHaveBeenCalled();
+      // Verify no events were published
       expect(mockPublish).not.toHaveBeenCalled();
-
-      // Verify Gemini data was NOT stored
-      expect(mockUpdateGeminiTranscriptionData).not.toHaveBeenCalled();
       expect(mockAudioTranscribedPublish).not.toHaveBeenCalled();
     });
   });
