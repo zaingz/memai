@@ -24,7 +24,7 @@
     "@langchain/textsplitters": "^0.1.0",
     "@supabase/supabase-js": "^2.75.0",
     "bcrypt": "^6.0.0",
-    "encore.dev": "^1.50.4",
+    "encore.dev": "^1.50.7",
     "fuzzysort": "^3.1.0",
     "jose": "^6.1.0",
     "jsonwebtoken": "^9.0.2",
