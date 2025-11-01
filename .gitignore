@@ -15,7 +15,9 @@ node_modules
 .supabase/
 
 # Frontend (deployed separately to Vercel)
-frontend/
+frontend/**
+!frontend/
+!frontend/vercel.json
 
 # IDE-specific files
 .cursor/
