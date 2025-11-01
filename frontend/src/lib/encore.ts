@@ -23,12 +23,11 @@ const apiBaseUrl = getApiBaseUrl();
 let authToken: string | null = null;
 
 export const encoreClient = new Client(apiBaseUrl, {
-  headers: () => {
-    const headers: Record<string, string> = {};
+  auth: () => {
     if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
+      return { authorization: `Bearer ${authToken}` };
     }
-    return headers;
+    return undefined;
   },
 });
 
