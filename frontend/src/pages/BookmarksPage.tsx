@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 
 // Bookmark item component with expand/collapse
 function BookmarkItem({ bookmark, onDelete }: { bookmark: any; onDelete: (id: number) => void }) {
@@ -80,7 +81,9 @@ function BookmarkItem({ bookmark, onDelete }: { bookmark: any; onDelete: (id: nu
                   {transcription.summary && (
                     <div>
                       <h4 className="font-semibold text-sm mb-2">AI Summary</h4>
-                      <p className="text-sm leading-relaxed">{transcription.summary}</p>
+                      <ReactMarkdown className="text-sm leading-relaxed prose prose-sm max-w-none">
+                        {transcription.summary}
+                      </ReactMarkdown>
                     </div>
                   )}
 
