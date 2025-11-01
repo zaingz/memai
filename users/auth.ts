@@ -120,16 +120,11 @@ export const auth = authHandler<AuthParams, AuthData>(
 );
 
 /**
- * Gateway configuration with auth handler and CORS
+ * Gateway configuration with auth handler
  * This makes the auth handler available to all services in the application
- * and allows cross-origin requests from the frontend
+ *
+ * NOTE: CORS is configured in encore.app file, not here
  */
 export const gateway = new Gateway({
   authHandler: auth,
-  cors: {
-    allowOriginsWithCredentials: [
-      "https://frontend-zaingzs-projects.vercel.app",
-      "http://localhost:5173", // Local development
-    ],
-  },
 });

@@ -1,29 +1,32 @@
-{
-	"id": "memai-backend-cno2",
-	"lang": "typescript",
-	"exclude": ["frontend"],
-	"global_cors": {
-		"allow_origins_with_credentials": [
-			"http://localhost:5173",
-			"http://localhost:5174",
-			"http://localhost:5175",
-			"http://localhost:3000"
-		],
-		"allow_headers": [
-			"Authorization",
-			"Content-Type"
-		],
-		"allow_methods": [
-			"GET",
-			"POST",
-			"PUT",
-			"DELETE",
-			"PATCH"
-		],
-		"expose_headers": [
-			"Content-Length"
-		],
-		"max_age": 7200,
-		"debug": true
-	}
-}
+[38;2;248;248;242m{[0m
+[38;2;248;248;242m	"id": "memai-backend-cno2",[0m
+[38;2;248;248;242m	"lang": "typescript",[0m
+[38;2;248;248;242m	"exclude": [[0m
+[38;2;248;248;242m		"frontend"[0m
+[38;2;248;248;242m	],[0m
+[38;2;248;248;242m	"global_cors": {[0m
+[38;2;248;248;242m		"allow_origins_with_credentials": [[0m
+[38;2;248;248;242m			"http://localhost:5173",[0m
+[38;2;248;248;242m			"http://localhost:5174",[0m
+[38;2;248;248;242m			"http://localhost:5175",[0m
+[38;2;248;248;242m			"http://localhost:3000",[0m
+[38;2;248;248;242m			"https://frontend-zaingzs-projects.vercel.app"[0m
+[38;2;248;248;242m		],[0m
+[38;2;248;248;242m		"allow_headers": [[0m
+[38;2;248;248;242m			"Authorization",[0m
+[38;2;248;248;242m			"Content-Type"[0m
+[38;2;248;248;242m		],[0m
+[38;2;248;248;242m		"allow_methods": [[0m
+[38;2;248;248;242m			"GET",[0m
+[38;2;248;248;242m			"POST",[0m
+[38;2;248;248;242m			"PUT",[0m
+[38;2;248;248;242m			"DELETE",[0m
+[38;2;248;248;242m			"PATCH"[0m
+[38;2;248;248;242m		],[0m
+[38;2;248;248;242m		"expose_headers": [[0m
+[38;2;248;248;242m			"Content-Length"[0m
+[38;2;248;248;242m		],[0m
+[38;2;248;248;242m		"max_age": 7200,[0m
+[38;2;248;248;242m		"debug": true[0m
+[38;2;248;248;242m	}[0m
+[38;2;248;248;242m}[0m
