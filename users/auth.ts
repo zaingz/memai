@@ -45,6 +45,8 @@ const SUPABASE_JWKS = createRemoteJWKSet(
  * Test Mode:
  * - In test environment (appMeta().environment.type === "test"), JWTs are decoded
  *   without signature verification to allow integration tests with test JWTs
+ *
+ * Note: Requires SupabaseURL, SupabaseAnonKey, and SupabaseServiceRoleKey secrets
  */
 export const auth = authHandler<AuthParams, AuthData>(
   async (params) => {
