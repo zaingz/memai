@@ -13,7 +13,7 @@ export function useBookmarks(params = {}) {
 export function useBookmark(id: number) {
   return useQuery({
     queryKey: ['bookmark', id],
-    queryFn: () => encoreClient.bookmarks.get({ id }),
+    queryFn: () => encoreClient.bookmarks.get(id),
     enabled: !!id,
   });
 }
@@ -22,7 +22,7 @@ export function useBookmark(id: number) {
 export function useBookmarkDetails(id: number) {
   return useQuery({
     queryKey: ['bookmarkDetails', id],
-    queryFn: () => encoreClient.bookmarks.getDetails({ id }),
+    queryFn: () => encoreClient.bookmarks.getDetails(id),
     enabled: !!id,
   });
 }
@@ -45,7 +45,7 @@ export function useUpdateBookmark() {
 
   return useMutation({
     mutationFn: ({ id, ...data }: any) =>
-      encoreClient.bookmarks.update({ id }, data),
+      encoreClient.bookmarks.update(id, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
       queryClient.invalidateQueries({ queryKey: ['bookmark', variables.id] });
@@ -58,7 +58,7 @@ export function useDeleteBookmark() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: number) => encoreClient.bookmarks.remove({ id }),
+    mutationFn: (id: number) => encoreClient.bookmarks.remove(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
     },
