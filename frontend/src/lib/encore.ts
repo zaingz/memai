@@ -1,7 +1,23 @@
 import Client, { Local } from '@/client';
 import { supabase } from './supabase';
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || Local;
+// Get API base URL with validation
+const getApiBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+
+  // In production, VITE_API_BASE_URL must be set
+  if (import.meta.env.PROD && !envUrl) {
+    throw new Error(
+      'VITE_API_BASE_URL environment variable is required in production. ' +
+      'Please set it in your Vercel project settings.'
+    );
+  }
+
+  // Use env URL if set, otherwise Local for development
+  return envUrl || Local;
+};
+
+const apiBaseUrl = getApiBaseUrl();
 
 // Create singleton client instance with auth token support
 let authToken: string | null = null;
