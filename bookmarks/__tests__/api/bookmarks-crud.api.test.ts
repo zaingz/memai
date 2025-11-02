@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BookmarkSource, TranscriptionStatus } from "../../types/domain.types";
 import type { Bookmark, Transcription } from "../../types/domain.types";
 import type { WebContent } from "../../types/web-content.types";
+import { ContentStatus } from "../../types/web-content.types";
 
 // Hoist mock functions for use in module mocks
 const {
@@ -427,7 +428,7 @@ describe("Bookmarks CRUD API", () => {
         estimated_reading_minutes: 5,
         summary: "Summary",
         metadata: { ogImage: "https://example.com/image.jpg" },
-        status: "completed",
+        status: ContentStatus.COMPLETED,
         error_message: null,
         processing_started_at: new Date(),
         processing_completed_at: new Date(),

@@ -169,7 +169,7 @@ export default function App() {
                 key={bookmark.id}
                 bookmark={bookmark}
                 isActive={bookmark.id === selectedId}
-                onSelect={setSelectedId}
+                onSelect={(bookmark) => setSelectedId(bookmark.id)}
               />
             ))}
           </section>
