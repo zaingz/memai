@@ -26,6 +26,7 @@ import { bookmarkCreatedTopic } from "./events/bookmark-created.events";
 import { BookmarkRepository } from "./repositories/bookmark.repository";
 import { TranscriptionRepository } from "./repositories/transcription.repository";
 import { DailyDigestRepository } from "./repositories/daily-digest.repository";
+import { WebContentRepository } from "./repositories/web-content.repository";
 import { Transcription } from "./types/domain.types";
 import { DailyDigestService } from "./services/daily-digest.service";
 import { getDigestDateRange, parseDigestDate } from "./config/daily-digest.config";
@@ -34,6 +35,7 @@ import { getDigestDateRange, parseDigestDate } from "./config/daily-digest.confi
 const bookmarkRepo = new BookmarkRepository(db);
 const transcriptionRepo = new TranscriptionRepository(db);
 const dailyDigestRepo = new DailyDigestRepository(db);
+const webContentRepo = new WebContentRepository(db);
 
 // Initialize services
 const dailyDigestService = new DailyDigestService(dailyDigestRepo);
@@ -230,8 +232,9 @@ export const getDetails = api(
       throw APIError.notFound(`Bookmark with id ${req.id} not found`);
     }
 
-    // Fetch transcription if it exists (only relevant for YouTube bookmarks)
+    // Fetch transcription if it exists (only relevant for audio bookmarks)
     const transcription = await transcriptionRepo.findByBookmarkId(req.id);
+    const webContent = await webContentRepo.findByBookmarkId(req.id);
 
     log.info("Fetched bookmark details", {
       bookmarkId: req.id,
@@ -242,6 +245,7 @@ export const getDetails = api(
     return {
       bookmark,
       transcription: transcription ? toTranscriptionDetails(transcription) : null,
+      webContent,
     };
   }
 );
