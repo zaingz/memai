@@ -66,6 +66,47 @@
 
 ---
 
+## ⚠️ CRITICAL: Frontend/Backend Repository Separation
+
+**The frontend directory is NOT tracked in git for this repository.**
+
+### Why This Matters
+
+When deploying to Encore Cloud, the build process attempts to compile ALL TypeScript files in the repository. If frontend code (Vite, React) is present, it causes build failures:
+
+```
+unable to resolve module @vitejs/plugin-react: failed to get the node_modules path
+--> /workspace/frontend/vite.config.ts:2:1
+```
+
+### Solution Applied
+
+- Frontend is listed in `.gitignore` and completely excluded from git tracking
+- Frontend deploys independently to Vercel (separate deployment workflow)
+- Backend (this repo) only contains Encore services
+
+### Current Repository Structure
+
+```
+✅ Tracked in git:
+  bookmarks/      # Bookmarks service
+  users/          # Users service
+  daily_digest/   # Daily digest service
+  test/           # Shared test utilities
+
+❌ NOT tracked (in .gitignore):
+  frontend/       # React app (Vercel deployment)
+```
+
+### Deployment Architecture
+
+- **Backend**: `git push encore main` → Encore Cloud (backend only)
+- **Frontend**: Deployed separately to Vercel (from local or separate repo)
+
+**DO NOT add frontend/ back to git!** This will break Encore Cloud builds.
+
+---
+
 ## 🚀 Quick Start for Agents
 
 ### Prerequisites

@@ -1320,3 +1320,33 @@
 [38;2;119;119;119m-[0m[38;2;255;255;255m Write too many E2E tests (keep to 3-5 critical flows)[0m
 
 [1;38;2;249;38;114m**[0m[1;38;2;249;38;114mRemember[0m[1;38;2;249;38;114m**[0m[38;2;255;255;255m: Quality over speed. Understand first, code second. Use tools to verify everything.[0m
+
+[38;2;248;248;242m**⚠️ CRITICAL: Frontend Repository Separation**[0m
+
+[38;2;248;248;242mThe frontend directory is **NOT tracked** in this repository's git.[0m
+
+[38;2;248;248;242m**Why:**[0m
+[38;2;248;248;242m- Encore Cloud tries to compile ALL TypeScript files during backend builds[0m
+[38;2;248;248;242m- Frontend uses Vite with `@vitejs/plugin-react` which aren't backend dependencies  [0m
+[38;2;248;248;242m- Including frontend causes build failures: "unable to resolve module @vitejs/plugin-react"[0m
+
+[38;2;248;248;242m**Solution:**[0m
+[38;2;248;248;242m- Frontend is in `.gitignore` and excluded from git tracking[0m
+[38;2;248;248;242m- Frontend deploys separately to Vercel (independent workflow)[0m
+[38;2;248;248;242m- Backend and frontend are completely decoupled in version control[0m
+
+[38;2;248;248;242m**DO NOT** add frontend back to git! Keep separation:[0m
+[38;2;248;248;242m```bash[0m
+[38;2;248;248;242m# Frontend remains local only[0m
+[38;2;248;248;242mfrontend/  # ← in .gitignore[0m
+
+[38;2;248;248;242m# Backend only in git[0m
+[38;2;248;248;242mbookmarks/[0m
+[38;2;248;248;242musers/[0m
+[38;2;248;248;242mdaily_digest/[0m
+[38;2;248;248;242m```[0m
+
+[38;2;248;248;242mIf you need to track frontend changes, use a separate repository.[0m
+
+[38;2;248;248;242m---[0m
+
