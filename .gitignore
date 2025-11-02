@@ -14,11 +14,8 @@ node_modules
 # Supabase local development
 .supabase/
 
-# Frontend build outputs
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-frontend/.vercel/
+# Frontend (deployed separately to Vercel)
+frontend/
 
 # IDE-specific files
 .cursor/
