@@ -14,10 +14,8 @@ node_modules
 # Supabase local development
 .supabase/
 
-# Frontend (deployed separately to Vercel)
-frontend/**
-!frontend/
-!frontend/vercel.json
+# Frontend build artifacts (the app itself is tracked)
+frontend/.vercel/
 
 # IDE-specific files
 .cursor/

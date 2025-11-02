@@ -16,6 +16,7 @@ import { db } from "../db";
 import { UserRepository } from "../repositories/user.repository";
 import { createTestUser, TEST_USERS } from "../../test/utils/test-data.factory";
 import { clearUsersTable } from "../../test/utils/database.util";
+// @ts-expect-error - Encore generates endpoints_testing.js but not .d.ts
 import * as usersTestClient from "../../encore.gen/internal/clients/users/endpoints_testing";
 import { generateTestJWT } from "../../test/utils/jwt-generator.util";
 import type { CallOpts } from "encore.dev/api";
