@@ -19,6 +19,7 @@ import { MeResponse, UpdateProfileResponse } from "../types/api.types";
 import { randomUUID } from "crypto";
 import { decodeJwt } from "jose";
 import { APIError } from "encore.dev/api";
+// @ts-expect-error - Encore generates endpoints_testing.js but not .d.ts
 import * as usersTestClient from "~encore/internal/clients/users/endpoints_testing";
 
 // Helper to decode JWT and create auth opts for test client
