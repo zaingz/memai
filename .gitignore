@@ -14,7 +14,10 @@ node_modules
 # Supabase local development
 .supabase/
 
-# Frontend build artifacts (the app itself is tracked)
+# Frontend build outputs
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
 frontend/.vercel/
 
 # IDE-specific files

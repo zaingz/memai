@@ -49,6 +49,17 @@ export class BookmarkRepository {
   }
 
   /**
+   * Finds a bookmark by ID without enforcing user isolation.
+   * Intended for internal processors where the user context is not available.
+   */
+  async findByIdRaw(id: number): Promise<Bookmark | null> {
+    const row = await this.db.queryRow<Bookmark>`
+      SELECT * FROM bookmarks WHERE id = ${id}
+    `;
+    return row || null;
+  }
+
+  /**
    * Lists bookmarks with pagination and optional filtering (filtered by user_id)
    */
   async list(params: {
@@ -177,5 +188,23 @@ export class BookmarkRepository {
     await this.db.exec`
       DELETE FROM bookmarks WHERE id = ${id} AND user_id = ${userId}
     `;
+  }
+
+  /**
+   * Merges metadata into the existing bookmark metadata JSONB field.
+   * Performs a deep merge at the first level (JSONB concatenation).
+   */
+  async mergeMetadata(
+    id: number,
+    metadata: Record<string, any>
+  ): Promise<Bookmark | null> {
+    const row = await this.db.queryRow<Bookmark>`
+      UPDATE bookmarks
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || ${metadata}
+      WHERE id = ${id}
+      RETURNING *
+    `;
+
+    return row || null;
   }
 }

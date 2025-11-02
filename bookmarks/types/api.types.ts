@@ -1,5 +1,6 @@
 import { Query } from "encore.dev/api";
-import { Bookmark, BookmarkSource, Transcription, TranscriptionStatus } from "./domain.types";
+import { Bookmark, BookmarkSource, TranscriptionStatus } from "./domain.types";
+import type { WebContent } from "./web-content.types";
 
 // ============================================
 // Bookmark API Types
@@ -86,8 +87,5 @@ export interface TranscriptionDetails {
 export interface BookmarkDetailsResponse {
   bookmark: Bookmark;
   transcription: TranscriptionDetails | null;
-  // Future enrichment types can be added here:
-  // webContent?: WebContent | null;
-  // codeAnalysis?: CodeAnalysis | null;
-  // threadSummary?: ThreadSummary | null;
+  webContent: WebContent | null;
 }

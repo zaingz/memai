@@ -1,104 +1,17 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MemAI Daily Digest</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <title>Mem.ai — Bookmarks</title>
+    <meta
+      name="description"
+      content="Mem.ai bookmark library with AI-powered summaries and thumbnails"
+    />
+    <link rel="icon" type="image/svg+xml" href="/memai.svg" />
   </head>
   <body>
-    <main class="app">
-      <header class="app__header">
-        <h1>Daily Digest Control Panel</h1>
-        <p class="app__subtitle">
-          Connect to your Encore backend to list existing digests and trigger new ones.
-        </p>
-      </header>
-
-      <section class="card">
-        <h2>Backend connection</h2>
-        <form id="connection-form" class="form-grid">
-          <label>
-            API base URL
-            <input
-              id="base-url"
-              name="base-url"
-              type="url"
-              placeholder="https://your-backend.encr.app"
-              autocomplete="off"
-              required
-            />
-          </label>
-          <label>
-            Supabase JWT token
-            <textarea
-              id="auth-token"
-              name="auth-token"
-              rows="3"
-              placeholder="Paste the JWT issued by Supabase auth"
-            ></textarea>
-          </label>
-          <div class="form-grid__actions">
-            <button type="submit" class="btn btn--primary">Save &amp; refresh</button>
-            <button type="button" id="clear-settings" class="btn">Clear</button>
-          </div>
-        </form>
-        <p class="help-text">
-          The token is stored locally in your browser only. Leave it empty when hitting public test endpoints.
-        </p>
-      </section>
-
-      <section class="card">
-        <div class="card__header">
-          <h2>Generate digest</h2>
-          <button id="refresh-digests" class="btn">Refresh list</button>
-        </div>
-        <form id="generate-form" class="inline-form">
-          <label>
-            Date (optional)
-            <input id="digest-date" type="date" name="digest-date" />
-          </label>
-          <button type="submit" class="btn btn--primary">Generate</button>
-        </form>
-        <p id="generate-result" class="status-message" role="status"></p>
-      </section>
-
-      <section class="card">
-        <h2>Daily digests</h2>
-        <div id="digests-empty" class="empty-state hidden">
-          <p>No digests found. Generate one to get started.</p>
-        </div>
-        <ul id="digests-list" class="digest-list"></ul>
-      </section>
-
-      <section class="card">
-        <h2>Digest details</h2>
-        <article id="digest-details" class="digest-details empty">
-          <p>Select a digest to view its content.</p>
-        </article>
-      </section>
-    </main>
-
-    <template id="digest-item-template">
-      <li class="digest-list__item">
-        <button class="digest-list__button"></button>
-        <dl class="digest-list__meta">
-          <div>
-            <dt>Date</dt>
-            <dd data-field="date"></dd>
-          </div>
-          <div>
-            <dt>Status</dt>
-            <dd data-field="status"></dd>
-          </div>
-          <div>
-            <dt>Bookmarks</dt>
-            <dd data-field="count"></dd>
-          </div>
-        </dl>
-      </li>
-    </template>
-
-    <script type="module" src="./main.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

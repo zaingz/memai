@@ -13,6 +13,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BookmarkSource, TranscriptionStatus } from "../../types/domain.types";
 import type { Bookmark, Transcription } from "../../types/domain.types";
+import type { WebContent } from "../../types/web-content.types";
+import { ContentStatus } from "../../types/web-content.types";
 
 // Hoist mock functions for use in module mocks
 const {
@@ -23,6 +25,7 @@ const {
   mockBookmarkUpdate,
   mockBookmarkDelete,
   mockTranscriptionFindByBookmarkId,
+  mockWebContentFindByBookmarkId,
   mockTopicPublish,
 } = vi.hoisted(() => ({
   mockGetAuthData: vi.fn(),
@@ -32,6 +35,7 @@ const {
   mockBookmarkUpdate: vi.fn(),
   mockBookmarkDelete: vi.fn(),
   mockTranscriptionFindByBookmarkId: vi.fn(),
+  mockWebContentFindByBookmarkId: vi.fn(),
   mockTopicPublish: vi.fn(),
 }));
 
@@ -65,6 +69,12 @@ vi.mock("../../repositories/transcription.repository", () => ({
   },
 }));
 
+vi.mock("../../repositories/web-content.repository", () => ({
+  WebContentRepository: class MockWebContentRepository {
+    findByBookmarkId = mockWebContentFindByBookmarkId;
+  },
+}));
+
 vi.mock("../../events/bookmark-created.events", () => ({
   bookmarkCreatedTopic: {
     publish: mockTopicPublish,
@@ -81,6 +91,7 @@ describe("Bookmarks CRUD API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetAuthData.mockReturnValue(mockAuth);
+    mockWebContentFindByBookmarkId.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -404,11 +415,33 @@ describe("Bookmarks CRUD API", () => {
 
       mockBookmarkFindById.mockResolvedValue(mockBookmark);
       mockTranscriptionFindByBookmarkId.mockResolvedValue(mockTranscription);
+      const mockWebContent: WebContent = {
+        id: 10,
+        bookmark_id: 1,
+        raw_markdown: "# Sample",
+        raw_html: "<h1>Sample</h1>",
+        page_title: "Sample Page",
+        page_description: "Description",
+        language: "en",
+        word_count: 1000,
+        char_count: 4000,
+        estimated_reading_minutes: 5,
+        summary: "Summary",
+        metadata: { ogImage: "https://example.com/image.jpg" },
+        status: ContentStatus.COMPLETED,
+        error_message: null,
+        processing_started_at: new Date(),
+        processing_completed_at: new Date(),
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+      mockWebContentFindByBookmarkId.mockResolvedValue(mockWebContent);
 
       const result = await api.getDetails({ id: 1 });
 
       expect(mockBookmarkFindById).toHaveBeenCalledWith(1, mockUserId);
       expect(mockTranscriptionFindByBookmarkId).toHaveBeenCalledWith(1);
+      expect(mockWebContentFindByBookmarkId).toHaveBeenCalledWith(1);
       expect(result.bookmark).toEqual(mockBookmark);
       expect(result.transcription).toEqual({
         transcript: "Full transcript text",
@@ -423,17 +456,20 @@ describe("Bookmarks CRUD API", () => {
         created_at: mockTranscription.created_at,
         updated_at: mockTranscription.updated_at,
       });
+      expect(result.webContent).toEqual(mockWebContent);
     });
 
     it("should return bookmark without transcription if none exists", async () => {
       const mockBookmark = createMockBookmark(2, "https://example.com/article", BookmarkSource.BLOG);
       mockBookmarkFindById.mockResolvedValue(mockBookmark);
       mockTranscriptionFindByBookmarkId.mockResolvedValue(null);
+      mockWebContentFindByBookmarkId.mockResolvedValue(null);
 
       const result = await api.getDetails({ id: 2 });
 
       expect(result.bookmark).toEqual(mockBookmark);
       expect(result.transcription).toBeNull();
+      expect(result.webContent).toBeNull();
     });
 
     it("should throw not found error if bookmark doesn't exist", async () => {
