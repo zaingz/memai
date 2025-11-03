@@ -1,7 +1,5 @@
 import log from "encore.dev/log";
 import { ChatOpenAI } from "@langchain/openai";
-import { loadSummarizationChain } from "langchain/chains";
-import { Document } from "@langchain/core/documents";
 import { DigestContentItem } from "../types/web-content.types";
 import { DAILY_DIGEST_CONFIG } from "../config/daily-digest.config";
 import {
@@ -23,11 +21,16 @@ interface MapBeat {
   itemNumber: number;
   groupKey: string;
   rawGroupKey: string;
-  themeTitle: string;
-  oneSentenceSummary: string;
-  keyFacts: string[];
-  contextAndImplication: string;
-  signals: string;
+  segmentTitle: string;
+  headline: string;
+  urgencyScore: number;
+  urgencyLabel: string;
+  whyItMatters: string;
+  fastFacts: string[];
+  soundbite: string;
+  formatCue: string;
+  actionStep: string;
+  forwardSignal: string;
   tags: string[];
   sourceNotes: string;
 }
@@ -36,15 +39,22 @@ interface ThemeCluster {
   slug: string;
   beats: MapBeat[];
   tags: Set<string>;
+  maxUrgency: number;
+  formatCues: Set<string>;
 }
 
 interface ClusterSummary {
   slug: string;
-  title: string;
-  narrative: string;
-  keyTakeaways: string[];
-  bridgeSentence: string;
+  segmentName: string;
+  anchorIntro: string;
+  essentialPoints: string[];
+  highlightSoundbite: string;
+  recommendedAction: string;
+  segue: string;
   tags: string[];
+  maxUrgency: number;
+  urgencyLabel: string;
+  formatCues: string[];
 }
 
 function slugify(value: string, fallback: string): string {
@@ -70,6 +80,48 @@ function normalizeTags(tags: string[] | undefined): string[] {
         )
     )
   );
+}
+
+function clampUrgencyScore(value: unknown): number {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return Math.min(5, Math.max(1, Math.round(numeric)));
+  }
+  return 3;
+}
+
+function normalizeUrgencyLabel(label: unknown, score: number): string {
+  const fallback = deriveUrgencyLabel(score);
+  if (!label) return fallback;
+  const normalized = label.toString().trim().toLowerCase();
+  const mapping: Record<string, string> = {
+    immediate: "Immediate",
+    high: "High",
+    watch: "Watch",
+    background: "Background",
+  };
+  return mapping[normalized] ?? fallback;
+}
+
+function deriveUrgencyLabel(score: number): string {
+  if (score >= 5) return "Immediate";
+  if (score === 4) return "High";
+  if (score === 3) return "Watch";
+  return "Background";
+}
+
+function highestUrgency(beats: MapBeat[]): {
+  score: number;
+  label: string;
+} {
+  if (!beats.length) {
+    return { score: 0, label: "Background" };
+  }
+  const sorted = [...beats].sort((a, b) => b.urgencyScore - a.urgencyScore);
+  return {
+    score: sorted[0]?.urgencyScore ?? 0,
+    label: sorted[0]?.urgencyLabel ?? deriveUrgencyLabel(sorted[0]?.urgencyScore ?? 0),
+  };
 }
 
 function termOverlap(a: string, b: string): number {
@@ -189,7 +241,8 @@ export class MapReduceDigestService {
     const slugMap = new Map<string, ThemeCluster>();
 
     for (const beat of beats) {
-      const normalizedSlug = beat.groupKey || slugify(beat.themeTitle, "general");
+      const normalizedSlug =
+        beat.groupKey || slugify(beat.segmentTitle || beat.headline, "general");
       let cluster = slugMap.get(normalizedSlug);
 
       if (!cluster) {
@@ -199,6 +252,8 @@ export class MapReduceDigestService {
             slug: normalizedSlug,
             beats: [],
             tags: new Set<string>(),
+            maxUrgency: 0,
+            formatCues: new Set<string>(),
           };
           clusters.push(cluster);
         }
@@ -207,6 +262,10 @@ export class MapReduceDigestService {
 
       cluster.beats.push(beat);
       beat.tags.forEach((tag) => cluster!.tags.add(tag));
+      cluster.maxUrgency = Math.max(cluster.maxUrgency, beat.urgencyScore);
+      if (beat.formatCue) {
+        cluster.formatCues.add(beat.formatCue);
+      }
     }
 
     return clusters;
@@ -239,9 +298,9 @@ export class MapReduceDigestService {
           ? overlap / Math.min(beatTags.size, clusterTags.size)
           : 0;
 
-      const titleScore = termOverlap(
-        beat.themeTitle,
-        cluster.beats[0]?.themeTitle || ""
+      const titleScore = Math.max(
+        termOverlap(beat.segmentTitle, cluster.beats[0]?.segmentTitle || ""),
+        termOverlap(beat.headline, cluster.beats[0]?.headline || "")
       );
 
       const combinedScore = Math.max(tagScore, titleScore);
@@ -261,55 +320,83 @@ export class MapReduceDigestService {
   ): Promise<ClusterSummary[]> {
     const summaries: ClusterSummary[] = [];
 
-    for (const [index, cluster] of clusters.entries()) {
+    for (const cluster of clusters) {
       const candidateTitles = Array.from(
-        new Set(cluster.beats.map((beat) => beat.themeTitle).filter(Boolean))
+        new Set(
+          cluster.beats
+            .flatMap((beat) => [beat.segmentTitle, beat.headline])
+            .filter(Boolean)
+            .map((title) => title!.toString())
+        )
       );
 
       const clusterItems = cluster.beats
         .map((beat) => {
-          const facts = beat.keyFacts.map((fact) => `• ${fact}`).join("\n");
+          const facts = beat.fastFacts.map((fact) => `• ${fact}`).join("\n");
           const tags = beat.tags.join(", ") || "none";
-          return `Item ${beat.itemNumber}:
-  Title: ${beat.themeTitle}
-  Summary: ${beat.oneSentenceSummary}
-  Key facts:
+          return `Item ${beat.itemNumber} [${beat.urgencyLabel} · ${beat.urgencyScore}/5]
+Segment: ${beat.segmentTitle}
+Headline: ${beat.headline}
+Why it matters: ${beat.whyItMatters}
+Fast facts:
 ${facts ? facts : "• (fact missing)"}
-  Context: ${beat.contextAndImplication}
-  Signals: ${beat.signals}
-  Tags: ${tags}
-  Source: ${beat.sourceNotes}`;
+Soundbite: ${beat.soundbite || "n/a"}
+Action cue: ${beat.actionStep}
+Forward signal: ${beat.forwardSignal}
+Format: ${beat.formatCue || "unspecified"}
+Tags: ${tags}
+Source: ${beat.sourceNotes}`;
         })
         .join("\n\n");
+
+      const { score: urgencyScore, label: urgencyLabel } = highestUrgency(
+        cluster.beats
+      );
+      const formatCues = Array.from(cluster.formatCues).filter(Boolean);
 
       const prompt = CLUSTER_SUMMARY_PROMPT.replace(
         "{cluster_slug}",
         cluster.slug
       )
         .replace("{candidate_titles}", candidateTitles.join(" | ") || cluster.slug)
-        .replace("{cluster_tags}", Array.from(cluster.tags).join(", ") || "general")
+        .replace(
+          "{cluster_tags}",
+          Array.from(cluster.tags).join(", ") || "general"
+        )
+        .replace("{cluster_urgency}", `${urgencyLabel} (${urgencyScore}/5)`)
+        .replace(
+          "{cluster_formats}",
+          formatCues.length ? formatCues.join(" | ") : "mixed formats"
+        )
         .replace("{cluster_items}", clusterItems);
 
       const response = await this.llm.invoke(prompt);
       const payload = extractJsonPayload(response.content.toString());
 
-      if (!payload?.cluster_title || !payload?.narrative_paragraph) {
+      if (!payload?.segment_name || !payload?.anchor_intro) {
         throw new Error(
           `Cluster summary missing fields for slug ${cluster.slug}`
         );
       }
 
-      const keyTakeaways = Array.isArray(payload.key_takeaways)
-        ? payload.key_takeaways.map((t: any) => t.toString())
+      const essentialPoints = Array.isArray(payload.essential_points)
+        ? payload.essential_points
+            .map((t: any) => t?.toString?.().trim())
+            .filter((t: string | undefined): t is string => Boolean(t))
         : [];
 
       summaries.push({
         slug: cluster.slug,
-        title: payload.cluster_title.toString(),
-        narrative: payload.narrative_paragraph.toString(),
-        keyTakeaways,
-        bridgeSentence: (payload.bridge_sentence || "").toString(),
+        segmentName: payload.segment_name.toString(),
+        anchorIntro: payload.anchor_intro.toString(),
+        essentialPoints,
+        highlightSoundbite: (payload.highlight_soundbite || "").toString(),
+        recommendedAction: (payload.recommended_action || "").toString(),
+        segue: (payload.segue || "").toString(),
         tags: Array.from(cluster.tags),
+        maxUrgency: urgencyScore,
+        urgencyLabel,
+        formatCues,
       });
     }
 
@@ -462,27 +549,46 @@ ${facts ? facts : "• (fact missing)"}
             ? rawBeat.item_number
             : currentIndex + idx + 1;
 
+        const sourceItem = batchContentItems[idx];
         const cleanKey = slugify(
           rawBeat?.group_key || "",
-          rawBeat?.theme_title || ""
+          rawBeat?.segment_title || rawBeat?.headline || ""
         );
 
         const tags = normalizeTags(rawBeat?.tags);
+        const urgencyScore = clampUrgencyScore(rawBeat?.urgency_score);
+        const urgencyLabel = normalizeUrgencyLabel(
+          rawBeat?.urgency_label,
+          urgencyScore
+        );
+        const fastFacts = Array.isArray(rawBeat?.fast_facts)
+          ? rawBeat.fast_facts
+              .map((fact: any) => fact?.toString?.().trim())
+              .filter((fact: string | undefined): fact is string => Boolean(fact))
+          : [];
+        const inferredFormatCue =
+          sourceItem?.content_type === "audio"
+            ? "🎧 Audio highlight"
+            : "📄 Quick read";
+        const formatCue = (rawBeat?.format_cue || "").toString() || inferredFormatCue;
+        const rawSoundbite = (rawBeat?.soundbite || "").toString();
+        const soundbite =
+          rawSoundbite.trim().toLowerCase() === "n/a" ? "" : rawSoundbite;
 
         beats.push({
           itemNumber,
           groupKey: cleanKey,
           rawGroupKey: (rawBeat?.group_key || "").toString(),
-          themeTitle: (rawBeat?.theme_title || "").toString(),
-          oneSentenceSummary: (rawBeat?.one_sentence_summary || "").toString(),
-          keyFacts:
-            Array.isArray(rawBeat?.key_facts) && rawBeat.key_facts.length
-              ? rawBeat.key_facts.map((f: any) => f.toString())
-              : [],
-          contextAndImplication: (
-            rawBeat?.context_and_implication || ""
-          ).toString(),
-          signals: (rawBeat?.signals || "").toString(),
+          segmentTitle: (rawBeat?.segment_title || "").toString(),
+          headline: (rawBeat?.headline || "").toString(),
+          urgencyScore,
+          urgencyLabel,
+          whyItMatters: (rawBeat?.why_it_matters || "").toString(),
+          fastFacts,
+          soundbite: soundbite,
+          formatCue,
+          actionStep: (rawBeat?.action_step || "").toString(),
+          forwardSignal: (rawBeat?.forward_signal || "").toString(),
           tags,
           sourceNotes: (rawBeat?.source_notes || "").toString(),
         });
@@ -506,20 +612,31 @@ ${facts ? facts : "• (fact missing)"}
       throw new Error("No cluster summaries available for reduction");
     }
 
-    const clusterBriefs = clusterSummaries
+    const orderedSummaries = [...clusterSummaries].sort(
+      (a, b) => b.maxUrgency - a.maxUrgency
+    );
+
+    const clusterBriefs = orderedSummaries
       .map((cluster, idx) => {
-        const takeaways = cluster.keyTakeaways
-          .map((t) => `- ${t}`)
+        const points = cluster.essentialPoints
+          .map((point) => `- ${point}`)
           .join("\n");
+        const formats = cluster.formatCues.join(", ") || "mixed formats";
         return `Cluster ${idx + 1} (${cluster.slug})
-Title: ${cluster.title}
-Narrative: ${cluster.narrative}
-KeyTakeaways:
-${takeaways || "-"}
-Bridge: ${cluster.bridgeSentence}
+Segment: ${cluster.segmentName}
+Urgency: ${cluster.urgencyLabel} (${cluster.maxUrgency}/5)
+Formats: ${formats}
+Anchor intro: ${cluster.anchorIntro}
+Essential points:
+${points || "-"}
+Soundbite: ${cluster.highlightSoundbite}
+Action: ${cluster.recommendedAction}
+Segue: ${cluster.segue}
 Tags: ${cluster.tags.join(", ") || "general"}`;
       })
       .join("\n\n");
+
+    const spotlightCluster = orderedSummaries[0];
 
     const reducePrompt = MAP_REDUCE_REDUCE_PROMPT
       .replace("{cluster_briefs}", clusterBriefs)
@@ -529,7 +646,8 @@ Tags: ${cluster.tags.join(", ") || "general"}`;
         String(context.totalItems ?? clusterSummaries.length)
       )
       .replace("{audio_count}", String(context.audioCount ?? 0))
-      .replace("{article_count}", String(context.articleCount ?? 0));
+      .replace("{article_count}", String(context.articleCount ?? 0))
+      .replace("{spotlight_slug}", spotlightCluster?.slug ?? "general");
 
     const result = await this.llm.invoke(reducePrompt);
     return result.content.toString();

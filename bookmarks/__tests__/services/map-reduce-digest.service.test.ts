@@ -37,8 +37,10 @@ vi.mock("../../utils/token-estimator.util", () => ({
 
 vi.mock("../../config/prompts.config", () => ({
   MAP_REDUCE_MAP_PROMPT: "MAP_PROMPT {batch_summaries}",
-  CLUSTER_SUMMARY_PROMPT: "CLUSTER_PROMPT slug:{cluster_slug} titles:{candidate_titles} tags:{cluster_tags} items:{cluster_items}",
-  MAP_REDUCE_REDUCE_PROMPT: "REDUCE {cluster_briefs} :: {digest_date} :: {total_items} :: {audio_count} :: {article_count}",
+  CLUSTER_SUMMARY_PROMPT:
+    "CLUSTER_PROMPT slug:{cluster_slug} titles:{candidate_titles} tags:{cluster_tags} urgency:{cluster_urgency} formats:{cluster_formats} items:{cluster_items}",
+  MAP_REDUCE_REDUCE_PROMPT:
+    "REDUCE {cluster_briefs} ## TL;DR :: {digest_date} :: {total_items} :: {audio_count} :: {article_count} :: {spotlight_slug}",
   formatSourceName: vi.fn((source: string) => source),
 }));
 
@@ -143,30 +145,40 @@ describe("MapReduceDigestService (clustered narrative flow)", () => {
           {
             item_number: 1,
             group_key: "market-pulse",
-            theme_title: "Tech stocks wobble",
-            one_sentence_summary: "Tech shares slide as yields climb.",
-            key_facts: [
+            segment_title: "Tech stocks wobble",
+            headline: "Tech shares slide as yields climb",
+            urgency_score: 5,
+            urgency_label: "Immediate",
+            why_it_matters:
+              "Portfolio beta spikes as higher yields hammer growth positioning.",
+            fast_facts: [
               "Nasdaq down 2.1% amid rate jitters",
               "Investors rotate into defensives",
             ],
-            context_and_implication:
-              "Signals traders bracing for higher-for-longer rates.",
-            signals: "Watch earnings calls later this week",
+            soundbite: "Traders call it a tantrum",
+            format_cue: "📄 Quick read",
+            action_step: "Skim the blog's chart pack",
+            forward_signal: "Earnings calls later this week",
             tags: ["markets", "stocks"],
             source_notes: "long-form blog",
           },
           {
             item_number: 2,
             group_key: "market-pulse",
-            theme_title: "Bond yields bite",
-            one_sentence_summary: "Rising yields pressure growth names.",
-            key_facts: [
+            segment_title: "Bond yields bite",
+            headline: "Rising yields pressure growth names",
+            urgency_score: 4,
+            urgency_label: "High",
+            why_it_matters:
+              "Higher discount rates reset valuations and sour retail mood.",
+            fast_facts: [
               "10-year yield pops above 4.6%",
               "Podcast guests flag retail sentiment drop",
             ],
-            context_and_implication:
-              "Suggests broader rotation into value plays.",
-            signals: "Eyes on CPI print tomorrow",
+            soundbite: "Bond desks see patience thin",
+            format_cue: "🎧 Audio briefing",
+            action_step: "Queue the yield segment for commute",
+            forward_signal: "Eyes on CPI print tomorrow",
             tags: ["markets", "bonds"],
             source_notes: "podcast briefing",
           },
@@ -177,16 +189,20 @@ describe("MapReduceDigestService (clustered narrative flow)", () => {
           {
             item_number: 3,
             group_key: "ai-policy",
-            theme_title: "Policy makers circle AI",
-            one_sentence_summary:
-              "Lawmakers draft guardrails for enterprise AI rollouts.",
-            key_facts: [
+            segment_title: "Policy makers circle AI",
+            headline: "Lawmakers draft enterprise AI guardrails",
+            urgency_score: 3,
+            urgency_label: "Watch",
+            why_it_matters:
+              "Could reshape go-to-market plans for regulated-sector AI startups.",
+            fast_facts: [
               "Proposed bill targets transparency",
               "Startups warn of compliance costs",
             ],
-            context_and_implication:
-              "Could reshape go-to-market playbooks for AI vendors.",
-            signals: "Expect hearings next month",
+            soundbite: "One senator calls it a safety net",
+            format_cue: "🎧 Deep-dive podcast",
+            action_step: "Save the hearing recap for later",
+            forward_signal: "Expect hearings next month",
             tags: ["ai", "policy"],
             source_notes: "policy podcast",
           },
@@ -195,29 +211,31 @@ describe("MapReduceDigestService (clustered narrative flow)", () => {
       // Cluster summary (market cluster)
       .mockResolvedValueOnce({
         content: JSON.stringify({
-          cluster_title: "Markets wobble under rate pressure",
-          narrative_paragraph:
-            "Tech shares stumbled as bond yields broke higher, with investors rotating toward defensive plays while strategists braced for stickier inflation.",
-          key_takeaways: [
+          segment_name: "Markets wobble under rate pressure",
+          anchor_intro:
+            "Tech shares stumbled as bond yields broke higher, forcing investors toward defensive havens while strategists braced for stickier inflation.",
+          essential_points: [
             "Nasdaq slides 2.1% as yields climb",
             "Rotation hints at risk-off sentiment",
           ],
-          bridge_sentence:
-            "From the trading floor to the policy arena, another debate rolled on.",
+          highlight_soundbite: "Traders call the pullback a tantrum",
+          recommended_action: "Skim the chart pack, then queue the bond clip",
+          segue: "From the trading floor to the policy arena, momentum shifts.",
         }),
       })
       // Cluster summary (AI cluster)
       .mockResolvedValueOnce({
         content: JSON.stringify({
-          cluster_title: "AI regulation heats up",
-          narrative_paragraph:
-            "Policy makers sketched a transparency-first bill that could slow enterprise AI launches, even as founders warn compliance drag may dampen innovation.",
-          key_takeaways: [
+          segment_name: "AI regulation heats up",
+          anchor_intro:
+            "Policy makers sketched a transparency-first bill that could slow enterprise AI launches even as founders warn compliance drag may dampen innovation.",
+          essential_points: [
             "Proposed bill prioritises transparency",
             "Startups worry about compliance costs",
           ],
-          bridge_sentence:
-            "All eyes now shift to the next round of hearings.",
+          highlight_soundbite: "Lawmakers pitch it as a safety net",
+          recommended_action: "Bookmark the hearing recap for a weekend listen",
+          segue: "All eyes now shift to the next round of hearings.",
         }),
       })
       // Reduce phase output
@@ -235,14 +253,15 @@ describe("MapReduceDigestService (clustered narrative flow)", () => {
     // Ensure cluster prompt bundled both market items
     const clusterPromptCall = mockLLMInvoke.mock.calls[2][0] as string;
     expect(clusterPromptCall).toContain("market-pulse");
-    expect(clusterPromptCall).toContain("Item 1");
-    expect(clusterPromptCall).toContain("Item 2");
+    expect(clusterPromptCall).toContain("urgency:Immediate");
+    expect(clusterPromptCall).toContain("formats:📄 Quick read | 🎧 Audio briefing");
 
     // Ensure reduce prompt received cluster briefs (no single-item leftovers)
     const reducePromptCall = mockLLMInvoke.mock.calls[4][0] as string;
     expect(reducePromptCall).toContain("Cluster 1");
     expect(reducePromptCall).toContain("Cluster 2");
-    expect(reducePromptCall).not.toMatch(/Item 1/); // already merged upstream
+    expect(reducePromptCall).toContain("## TL;DR");
+    expect(reducePromptCall).toContain(":: market-pulse");
   });
 
   it("merges unique slugs when tags overlap", async () => {
@@ -270,25 +289,34 @@ describe("MapReduceDigestService (clustered narrative flow)", () => {
           {
             item_number: 1,
             group_key: "inflation-watch",
-            theme_title: "Inflation watch",
-            one_sentence_summary: "CPI momentum stays sticky.",
-            key_facts: ["Core CPI at 3.2%", "Wage growth slows"],
-            context_and_implication:
+            segment_title: "Inflation watch",
+            headline: "CPI momentum stays sticky",
+            urgency_score: 4,
+            urgency_label: "High",
+            why_it_matters:
               "Signals a tough path for rate cuts this quarter.",
-            signals: "Watch Friday's jobs report",
+            fast_facts: ["Core CPI at 3.2%", "Wage growth slows"],
+            soundbite: "Economists call it a grind",
+            format_cue: "📄 Quick read",
+            action_step: "Skim the inflation chart pack",
+            forward_signal: "Watch Friday's jobs report",
             tags: ["economy", "inflation"],
             source_notes: "macro blog",
           },
           {
             item_number: 2,
             group_key: "macro-brief",
-            theme_title: "Macro brief",
-            one_sentence_summary:
-              "Bond desks price in slower cuts amid inflation chatter.",
-            key_facts: ["Swaps imply two cuts", "Breakevens steady"],
-            context_and_implication:
-              "Markets bracing for higher-for-longer narrative.",
-            signals: "FOMC minutes next week",
+            segment_title: "Macro brief",
+            headline: "Bond desks price slower cuts",
+            urgency_score: 4,
+            urgency_label: "High",
+            why_it_matters:
+              "Markets brace for higher-for-longer narrative.",
+            fast_facts: ["Swaps imply two cuts", "Breakevens steady"],
+            soundbite: "Desk chatter says patience",
+            format_cue: "🎧 Audio briefing",
+            action_step: "Queue the macro recap",
+            forward_signal: "FOMC minutes next week",
             tags: ["inflation", "macro"],
             source_notes: "youtube recap",
           },
@@ -297,14 +325,16 @@ describe("MapReduceDigestService (clustered narrative flow)", () => {
       // Only one cluster summary call if merged correctly
       .mockResolvedValueOnce({
         content: JSON.stringify({
-          cluster_title: "Inflation story stays centre stage",
-          narrative_paragraph:
+          segment_name: "Inflation story stays centre stage",
+          anchor_intro:
             "Sticky CPI data and bond desks’ hedges suggest the rate-cut story is cooling, with traders eyeing jobs numbers for confirmation.",
-          key_takeaways: [
+          essential_points: [
             "Core CPI 3.2% keeps pressure on Fed",
             "Rate-cut bets cool as swaps reprice",
           ],
-          bridge_sentence: "From macro to tech, other trends emerged.",
+          highlight_soundbite: "Economists call the path a grind",
+          recommended_action: "Skim the chart pack then queue the macro recap",
+          segue: "From macro to tech, other trends emerged.",
         }),
       })
       .mockResolvedValueOnce({ content: "Final merged digest" });
