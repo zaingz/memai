@@ -31,13 +31,16 @@
 .daily-digest-header-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1.5rem; /* Increased gap for better separation */
+  flex-shrink: 0; /* Prevent actions from shrinking */
+  flex-wrap: nowrap; /* Never wrap to new line */
 }
 
 /* Modal Close Button */
 .modal-close {
   width: 36px;
   height: 36px;
+  min-width: 36px; /* Ensure minimum width */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -48,7 +51,8 @@
   cursor: pointer;
   transition: all 0.2s ease;
   padding: 0;
-  flex-shrink: 0;
+  flex-shrink: 0; /* Never shrink */
+  margin-left: 0.5rem; /* Extra margin from Generate Today button */
 }
 
 .modal-close:hover {
@@ -74,6 +78,8 @@
   background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  flex-shrink: 1; /* Allow title to shrink if needed */
+  min-width: 0; /* Allow title to shrink below content size */
 }
 
 .daily-digest-header .btn {
