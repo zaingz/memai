@@ -127,7 +127,11 @@
 }
 
 .digest-content-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   margin-bottom: 1.5rem;
+  gap: 1rem;
 }
 
 .digest-content-header h2 {
@@ -142,6 +146,37 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.digest-regenerate-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.digest-regenerate-btn:hover:not(:disabled) {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #f1f5f9;
+}
+
+.digest-regenerate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.digest-regenerate-btn svg {
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .digest-bookmark-count {
@@ -467,6 +502,16 @@
 
   .digest-content {
     padding: 1rem;
+  }
+
+  .digest-content-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .digest-regenerate-btn {
+    width: 100%;
+    justify-content: center;
   }
 
   .bookmarks-carousel-scroll {
