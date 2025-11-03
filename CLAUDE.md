@@ -211,22 +211,25 @@ If requirements are ambiguous:
 ## Common Bash Commands
 
 ```bash
-# Development
+# Development (run from backend/ directory)
+cd backend
 encore run                    # Start the dev server
 encore run --debug           # Start with debugging enabled
 
 # Database
+cd backend
 encore db conn-uri bookmarks # Get database connection string
 encore db shell bookmarks    # Open psql shell
 encore db reset bookmarks    # Reset database (careful!)
 psql "$(encore db conn-uri bookmarks)" -c "\d transcriptions"  # Check schema
 
 # Type checking
+cd backend
 npx tsc --noEmit            # Check TypeScript types
 
 # Project structure
-tree bookmarks -L 2 -I 'node_modules'  # View directory structure
-ls -la bookmarks/           # List files in bookmarks service
+tree backend/bookmarks -L 2 -I 'node_modules'  # View directory structure
+ls -la backend/bookmarks/           # List files in bookmarks service
 
 # Git
 git status                  # Check current state
@@ -290,42 +293,47 @@ const _ = new Subscription(topic, "handler-name", {
 
 ### Service Structure
 ```
-bookmarks/
-├── encore.service.ts    # Service registration (imports processors!)
-├── api.ts              # REST API endpoints
-├── db.ts               # Database initialization
-├── events/             # Pub/Sub topics (multi-stage pipeline)
-│   ├── youtube-download.events.ts        # Stage 1: YouTube download
-│   ├── audio-transcription.events.ts     # Stage 2: Audio transcription
-│   └── summary-generation.events.ts      # Stage 3: Summary generation
-├── types/              # Organized type definitions
-│   ├── domain.types.ts      # Core domain models
-│   ├── api.types.ts         # API request/response types
-│   ├── event.types.ts       # Pub/Sub event types
-│   ├── deepgram.types.ts    # Deepgram API types
-│   └── index.ts             # Re-exports
-├── config/             # Centralized configuration
-│   └── transcription.config.ts
-├── repositories/       # Database access ONLY
-│   ├── bookmark.repository.ts
-│   └── transcription.repository.ts
-├── services/           # Business logic
-│   ├── youtube-downloader.service.ts
-│   ├── deepgram.service.ts
-│   └── openai.service.ts
-├── processors/         # Pub/Sub handlers (multi-stage pipeline)
-│   ├── youtube-download.processor.ts         # Stage 1
-│   ├── audio-transcription.processor.ts      # Stage 2
-│   └── summary-generation.processor.ts       # Stage 3
-├── utils/             # Pure utility functions
-│   ├── youtube-url.util.ts
-│   ├── file-cleanup.util.ts
-│   └── deepgram-extractor.util.ts
-└── migrations/        # SQL migrations (numbered)
-    ├── 1_create_bookmarks.up.sql
-    ├── 2_create_transcriptions.up.sql
-    ├── 3_add_audio_intelligence.up.sql
-    └── 4_add_audio_metadata.up.sql
+backend/
+├── bookmarks/          # Bookmark service
+│   ├── encore.service.ts    # Service registration (imports processors!)
+│   ├── api.ts              # REST API endpoints
+│   ├── db.ts               # Database initialization
+│   ├── events/             # Pub/Sub topics (multi-stage pipeline)
+│   │   ├── youtube-download.events.ts        # Stage 1: YouTube download
+│   │   ├── audio-transcription.events.ts     # Stage 2: Audio transcription
+│   │   └── summary-generation.events.ts      # Stage 3: Summary generation
+│   ├── types/              # Organized type definitions
+│   │   ├── domain.types.ts      # Core domain models
+│   │   ├── api.types.ts         # API request/response types
+│   │   ├── event.types.ts       # Pub/Sub event types
+│   │   ├── deepgram.types.ts    # Deepgram API types
+│   │   └── index.ts             # Re-exports
+│   ├── config/             # Centralized configuration
+│   │   └── transcription.config.ts
+│   ├── repositories/       # Database access ONLY
+│   │   ├── bookmark.repository.ts
+│   │   └── transcription.repository.ts
+│   ├── services/           # Business logic
+│   │   ├── youtube-downloader.service.ts
+│   │   ├── deepgram.service.ts
+│   │   └── openai.service.ts
+│   ├── processors/         # Pub/Sub handlers (multi-stage pipeline)
+│   │   ├── youtube-download.processor.ts         # Stage 1
+│   │   ├── audio-transcription.processor.ts      # Stage 2
+│   │   └── summary-generation.processor.ts       # Stage 3
+│   ├── utils/             # Pure utility functions
+│   │   ├── youtube-url.util.ts
+│   │   ├── file-cleanup.util.ts
+│   │   └── deepgram-extractor.util.ts
+│   └── migrations/        # SQL migrations (numbered)
+│       ├── 1_create_bookmarks.up.sql
+│       ├── 2_create_transcriptions.up.sql
+│       ├── 3_add_audio_intelligence.up.sql
+│       └── 4_add_audio_metadata.up.sql
+├── users/              # User service
+├── test/               # Shared test utilities
+├── encore.app          # Encore configuration
+└── package.json        # Backend dependencies
 ```
 
 ### Architecture Principles
@@ -779,13 +787,13 @@ source: req.source as BookmarkSource | undefined
 ### Step 1: Gather Context
 ```bash
 # Read existing files
-Read bookmarks/api.ts
+Read backend/bookmarks/api.ts
 
 # Search for patterns
-Grep "queryRow" bookmarks/
+Grep "queryRow" backend/bookmarks/
 
 # Check structure
-tree bookmarks -L 2
+tree backend/bookmarks -L 2
 
 # Consult llm.txt
 Read llm.txt
@@ -811,7 +819,7 @@ Read llm.txt
 npx tsc --noEmit
 
 # Check structure
-tree bookmarks
+tree backend/bookmarks
 
 # Test database
 psql "$(encore db conn-uri bookmarks)" -c "\d table_name"
@@ -901,12 +909,15 @@ export default defineConfig({
 3. **Running Tests**
 ```bash
 # Local (uses fileParallelism: false from config)
+cd backend
 encore test
 
 # CI (override for speed)
+cd backend
 encore test --fileParallelism=true
 
 # Specific files
+cd backend
 encore test bookmarks/__tests__/bookmark.repository.test.ts
 ```
 
@@ -1140,7 +1151,7 @@ encore test
 
 # Run specific service tests
 encore test users/__tests__/
-encore test bookmarks/__tests__/
+encore test backend/bookmarks/__tests__/
 
 # Run specific test file
 encore test users/__tests__/user.repository.test.ts
