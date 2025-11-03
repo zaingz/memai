@@ -27,7 +27,7 @@ help:
 # Deploy backend to Encore Cloud
 deploy-backend:
 	@echo "Deploying backend to Encore Cloud..."
-	git push encore main
+	cd backend && git push encore main
 
 # Deploy frontend to Vercel (production)
 deploy-frontend:
@@ -43,38 +43,37 @@ deploy-all:
 # Clean build artifacts and temporary files
 clean:
 	@echo "Cleaning build artifacts..."
-	rm -rf .encore/
-	rm -rf encore.gen/
-	rm -rf node_modules/
-	rm -rf tsconfig.tsbuildinfo
+	cd backend && rm -rf .encore/ encore.gen/ node_modules/ tsconfig.tsbuildinfo
+	cd frontend && rm -rf node_modules/ dist/
 	@echo "Clean complete!"
 
 # Install dependencies
 install:
 	@echo "Installing dependencies..."
-	npm install
+	cd backend && npm install
+	cd frontend && npm install
 
 # Run backend locally
 dev-backend:
 	@echo "Starting Encore backend locally..."
-	encore run
+	cd backend && encore run
 
 # Run tests
 test:
 	@echo "Running tests..."
-	encore test
+	cd backend && encore test
 
 # Check TypeScript types
 typecheck:
 	@echo "Checking TypeScript types..."
-	npx tsc --noEmit
+	cd backend && npx tsc --noEmit
 
 # View staging logs
 logs:
 	@echo "Viewing staging logs..."
-	encore logs --env=staging
+	cd backend && encore logs --env=staging
 
 # Open database shell
 db-shell:
 	@echo "Opening database shell for bookmarks service..."
-	encore db shell bookmarks
+	cd backend && encore db shell bookmarks

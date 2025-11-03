@@ -29,7 +29,6 @@
     "skipLibCheck": true
   },
   "exclude": [
-    "frontend",
     "node_modules",
     "encore.gen/internal/entrypoints/services/hello",
     "encore.gen/internal/entrypoints/services/youtube"
