@@ -175,15 +175,23 @@ make deploy-frontend # Deploy frontend
 
 ### Backend Deployment (Encore Cloud)
 
+**Using Makefile (Recommended):**
 ```bash
-# From backend/ directory
-cd backend
-git remote add encore encore://memai-backend-cno2
-git push encore main
-
-# Or use Makefile from root
+# From root directory
 make deploy-backend
 ```
+
+This uses `git subtree` to push only the `backend/` directory to Encore Cloud.
+
+**Manual Deployment:**
+```bash
+# From root directory
+git subtree split --prefix=backend -b backend-deploy
+git push encore backend-deploy:main --force
+git branch -D backend-deploy
+```
+
+**Note:** The backend lives in a subdirectory of the monorepo, so we use `git subtree` to deploy only the backend code to Encore Cloud.
 
 ### Frontend Deployment (Vercel)
 

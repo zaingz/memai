@@ -24,10 +24,13 @@ help:
 	@echo "  make db-shell          - Open database shell for bookmarks service"
 	@echo ""
 
-# Deploy backend to Encore Cloud
+# Deploy backend to Encore Cloud (using git subtree for monorepo)
 deploy-backend:
 	@echo "Deploying backend to Encore Cloud..."
-	cd backend && git push encore main
+	@git subtree split --prefix=backend -b backend-deploy > /dev/null
+	@git push encore backend-deploy:main --force
+	@git branch -D backend-deploy > /dev/null
+	@echo "✅ Backend deployed successfully!"
 
 # Deploy frontend to Vercel (production)
 deploy-frontend:
