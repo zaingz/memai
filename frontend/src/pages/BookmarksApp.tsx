@@ -4,6 +4,7 @@ import { listBookmarks, getBookmarkDetails } from "../lib/api";
 import { BookmarkCard } from "../components/BookmarkCard";
 import { BookmarkDetails } from "../components/BookmarkDetails";
 import { DailyDigestView } from "../components/DailyDigestView";
+import { CreateBookmarkModal } from "../components/CreateBookmarkModal";
 import { useAuth } from "../contexts/AuthContext";
 import "./BookmarksApp.css";
 
@@ -18,6 +19,7 @@ export function BookmarksApp() {
   const [error, setError] = useState<string | null>(null);
   const [showDigestModal, setShowDigestModal] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     setIsLoading(true);
@@ -71,6 +73,16 @@ export function BookmarksApp() {
     [bookmarks, selectedId]
   );
 
+  const handleRefreshBookmarks = () => {
+    listBookmarks()
+      .then(response => {
+        setBookmarks(response.bookmarks);
+      })
+      .catch(err => {
+        console.error(err);
+      });
+  };
+
   return (
     <div className="app-container">
       {/* Header */}
@@ -105,6 +117,17 @@ export function BookmarksApp() {
               <svg viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
               </svg>
+            </button>
+
+            <button
+              className="create-button"
+              onClick={() => setShowCreateModal(true)}
+              aria-label="Create Bookmark"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+              </svg>
+              <span className="desktop-only">Create</span>
             </button>
 
             <button
@@ -197,16 +220,6 @@ export function BookmarksApp() {
             onClick={() => setSelectedId(null)}
           />
           <div className="details-modal">
-            <button
-              className="modal-close"
-              onClick={() => setSelectedId(null)}
-              aria-label="Close"
-            >
-              <svg viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </button>
-
             {isDetailsLoading ? (
               <div className="loading-container">
                 <div className="loading-spinner"></div>
@@ -223,6 +236,13 @@ export function BookmarksApp() {
           </div>
         </>
       )}
+
+      {/* Create Bookmark Modal */}
+      <CreateBookmarkModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={handleRefreshBookmarks}
+      />
 
       {/* Daily Digest Modal */}
       <DailyDigestView

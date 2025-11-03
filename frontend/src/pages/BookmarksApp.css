@@ -145,6 +145,35 @@
   height: 1.25rem;
 }
 
+/* ========== Create Button ========== */
+.create-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  height: 40px;
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 15px -3px rgba(59, 130, 246, 0.3);
+}
+
+.create-button:hover {
+  box-shadow: 0 6px 20px -3px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.create-button svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
 /* ========== Main Content ========== */
 .app-main {
   flex: 1;

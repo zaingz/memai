@@ -66,6 +66,17 @@ export function getBookmarkDetails(id: number): Promise<BookmarkDetailsResponse>
   return request(`/bookmarks/${id}/details`);
 }
 
+export function createBookmark(data: {
+  url: string;
+  source: string;
+  client_time: string;
+}): Promise<{ bookmark: any }> {
+  return request(`/bookmarks`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 // Daily Digest API Functions
 export function generateDailyDigest(date?: string): Promise<import("../types").GenerateDailyDigestResponse> {
   return request(`/digests/generate`, {
