@@ -68,7 +68,7 @@ export function getBookmarkDetails(id: number): Promise<BookmarkDetailsResponse>
 
 export function createBookmark(data: {
   url: string;
-  source: string;
+  source?: string;
   client_time: string;
 }): Promise<{ bookmark: any }> {
   return request(`/bookmarks`, {
