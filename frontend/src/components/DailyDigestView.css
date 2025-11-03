@@ -18,11 +18,24 @@
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
+/* Header - Compact & Elegant */
+.daily-digest-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  gap: 1rem;
+}
+
+.daily-digest-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 /* Modal Close Button */
 .modal-close {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
   width: 36px;
   height: 36px;
   display: flex;
@@ -34,8 +47,8 @@
   color: #cbd5e1;
   cursor: pointer;
   transition: all 0.2s ease;
-  z-index: 10;
   padding: 0;
+  flex-shrink: 0;
 }
 
 .modal-close:hover {
@@ -52,15 +65,6 @@
 .modal-close svg {
   width: 20px;
   height: 20px;
-}
-
-/* Header - Compact & Elegant */
-.daily-digest-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.25rem 4rem 1.25rem 1.5rem; /* Extra right padding for close button */
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .daily-digest-header h2 {
@@ -525,23 +529,28 @@
     left: 0;
   }
 
+  .daily-digest-header {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+    padding: 1rem;
+  }
+
+  .daily-digest-header-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
   .modal-close {
-    top: 0.875rem;
-    right: 0.875rem;
     width: 32px;
     height: 32px;
+    order: -1; /* Move close button to top on mobile */
+    align-self: flex-end;
   }
 
   .modal-close svg {
     width: 18px;
     height: 18px;
-  }
-
-  .daily-digest-header {
-    flex-direction: column;
-    gap: 0.75rem;
-    align-items: stretch;
-    padding: 1rem 3.5rem 1rem 1rem; /* Extra right padding for close button on mobile */
   }
 
   .daily-digest-header h2 {
@@ -579,7 +588,7 @@
 
 @media (max-width: 480px) {
   .daily-digest-header {
-    padding: 0.875rem 3rem 0.875rem 0.875rem; /* Extra right padding for close button */
+    padding: 0.875rem;
   }
 
   .bookmark-carousel-card {
