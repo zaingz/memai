@@ -59,11 +59,14 @@ function formatMetadataValue(value: unknown): string {
 
 export function BookmarkDetails({ bookmark, details, onClose, isOpen }: BookmarkDetailsProps) {
   const preview = bookmark?.metadata?.linkPreview;
+  const youtubeMetadata = bookmark?.metadata?.youtubeMetadata as any;
 
   const bookmarkMetadata = useMemo(() => {
     if (!bookmark?.metadata) return [] as Array<[string, unknown]>;
 
-    return Object.entries(bookmark.metadata).filter(([key]) => key !== "linkPreview");
+    return Object.entries(bookmark.metadata).filter(
+      ([key]) => key !== "linkPreview" && key !== "youtubeMetadata"
+    );
   }, [bookmark]);
 
   const webContentMetadata = useMemo(() => {
@@ -71,6 +74,15 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
 
     return Object.entries(details.webContent.metadata);
   }, [details?.webContent?.metadata]);
+
+  // Format upload date from YYYYMMDD to readable format
+  const formatUploadDate = (uploadDate: string | undefined) => {
+    if (!uploadDate) return "—";
+    const year = uploadDate.substring(0, 4);
+    const month = uploadDate.substring(4, 6);
+    const day = uploadDate.substring(6, 8);
+    return formatDate(`${year}-${month}-${day}`);
+  };
 
   /**
    * Handles YouTube thumbnail loading errors by falling back to lower quality.
@@ -206,6 +218,83 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
             </div>
           )}
         </div>
+
+        {/* YouTube Metadata Section */}
+        {youtubeMetadata && bookmark.source === 'youtube' && (
+          <div className="details-section">
+            <h3 className="section-title">YouTube Video Details</h3>
+            <div className="details-grid">
+              {youtubeMetadata.duration && (
+                <div className="detail-item">
+                  <span className="detail-label">Duration</span>
+                  <span className="detail-value">{formatDuration(youtubeMetadata.duration)}</span>
+                </div>
+              )}
+              {youtubeMetadata.uploader && (
+                <div className="detail-item">
+                  <span className="detail-label">Channel</span>
+                  <span className="detail-value">{youtubeMetadata.uploader}</span>
+                </div>
+              )}
+              {youtubeMetadata.view_count !== undefined && youtubeMetadata.view_count !== null && (
+                <div className="detail-item">
+                  <span className="detail-label">Views</span>
+                  <span className="detail-value">{formatNumber(youtubeMetadata.view_count)}</span>
+                </div>
+              )}
+              {youtubeMetadata.like_count !== undefined && youtubeMetadata.like_count !== null && (
+                <div className="detail-item">
+                  <span className="detail-label">Likes</span>
+                  <span className="detail-value">{formatNumber(youtubeMetadata.like_count)}</span>
+                </div>
+              )}
+              {youtubeMetadata.upload_date && (
+                <div className="detail-item">
+                  <span className="detail-label">Published</span>
+                  <span className="detail-value">{formatUploadDate(youtubeMetadata.upload_date)}</span>
+                </div>
+              )}
+              {youtubeMetadata.channel_id && (
+                <div className="detail-item">
+                  <span className="detail-label">Channel ID</span>
+                  <span className="detail-value detail-value--muted">{youtubeMetadata.channel_id}</span>
+                </div>
+              )}
+            </div>
+
+            {youtubeMetadata.description && (
+              <div className="details-metadata">
+                <h4 className="details-subtitle">Description</h4>
+                <p className="detail-description">{youtubeMetadata.description}</p>
+              </div>
+            )}
+
+            {youtubeMetadata.tags && youtubeMetadata.tags.length > 0 && (
+              <div className="details-metadata">
+                <h4 className="details-subtitle">Tags</h4>
+                <div className="tag-list">
+                  {youtubeMetadata.tags.slice(0, 20).map((tag: string, index: number) => (
+                    <span key={index} className="tag-badge">{tag}</span>
+                  ))}
+                  {youtubeMetadata.tags.length > 20 && (
+                    <span className="tag-badge tag-badge--more">+{youtubeMetadata.tags.length - 20} more</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {youtubeMetadata.categories && youtubeMetadata.categories.length > 0 && (
+              <div className="details-metadata">
+                <h4 className="details-subtitle">Categories</h4>
+                <div className="tag-list">
+                  {youtubeMetadata.categories.map((category: string, index: number) => (
+                    <span key={index} className="tag-badge tag-badge--category">{category}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Article Insights Section */}
         {details?.webContent ? (

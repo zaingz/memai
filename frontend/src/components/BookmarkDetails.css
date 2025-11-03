@@ -371,3 +371,55 @@
     padding: 1rem;
   }
 }
+
+/* YouTube Metadata Styles */
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tag-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #60a5fa;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.tag-badge:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.tag-badge--category {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.3);
+  color: #a78bfa;
+}
+
+.tag-badge--category:hover {
+  background: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.tag-badge--more {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #94a3b8;
+  cursor: default;
+}
+
+.detail-description {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: #cbd5e1;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

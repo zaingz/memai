@@ -42,9 +42,86 @@ log.info("YouTube downloader initialized", {
 });
 
 /**
+ * YouTube metadata extracted from yt-dlp
+ */
+export interface YouTubeMetadata {
+  title: string;
+  description?: string;
+  duration: number; // seconds
+  uploader: string; // channel name
+  uploader_id?: string;
+  uploader_url?: string;
+  channel_id?: string;
+  view_count?: number;
+  like_count?: number;
+  upload_date?: string; // YYYYMMDD format
+  thumbnail?: string;
+  tags?: string[];
+  categories?: string[];
+  age_limit?: number;
+  webpage_url: string;
+  fulltitle?: string;
+}
+
+/**
  * Service for downloading YouTube audio and uploading to Encore bucket
  */
 export class YouTubeDownloaderService {
+  /**
+   * Extracts metadata from YouTube video using yt-dlp without downloading
+   * @param videoId - YouTube video ID
+   * @returns YouTube metadata
+   * @throws Error if metadata extraction fails
+   */
+  async extractMetadata(videoId: string): Promise<YouTubeMetadata> {
+    const youtubeUrl = buildYouTubeUrl(videoId);
+
+    log.info("Extracting YouTube metadata", { videoId, youtubeUrl });
+
+    try {
+      // Use -J flag to get JSON output without downloading
+      const { stdout } = await exec(
+        `${YT_DLP_PATH} -J "${youtubeUrl}"`
+      );
+
+      const metadata = JSON.parse(stdout) as any;
+
+      // Extract relevant fields
+      const result: YouTubeMetadata = {
+        title: metadata.title || metadata.fulltitle || 'Untitled',
+        description: metadata.description,
+        duration: metadata.duration || 0,
+        uploader: metadata.uploader || metadata.channel || 'Unknown',
+        uploader_id: metadata.uploader_id,
+        uploader_url: metadata.uploader_url,
+        channel_id: metadata.channel_id,
+        view_count: metadata.view_count,
+        like_count: metadata.like_count,
+        upload_date: metadata.upload_date,
+        thumbnail: metadata.thumbnail,
+        tags: metadata.tags,
+        categories: metadata.categories,
+        age_limit: metadata.age_limit,
+        webpage_url: metadata.webpage_url || youtubeUrl,
+        fulltitle: metadata.fulltitle,
+      };
+
+      log.info("YouTube metadata extracted successfully", {
+        videoId,
+        title: result.title,
+        duration: result.duration,
+        uploader: result.uploader,
+      });
+
+      return result;
+    } catch (error) {
+      log.error(error, "Failed to extract YouTube metadata", { videoId });
+      throw new Error(
+        `Failed to extract YouTube metadata: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
   /**
    * Downloads audio from YouTube and uploads to bucket
    * @param videoId - YouTube video ID
