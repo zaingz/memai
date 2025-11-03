@@ -78,73 +78,91 @@ export const DEFAULT_SUMMARY_PROMPT = SUMMARY_PROMPTS[BookmarkSource.OTHER];
  * Map-Reduce Map Prompt
  * Applied to each batch of summaries to extract themes and insights
  */
-export const MAP_REDUCE_MAP_PROMPT = `You are the editorial analyst for the audio show "Memai Daily Briefing".
-Read the item notes below and emit structured beats the host can stitch together.
+export const MAP_REDUCE_MAP_PROMPT = `You are the segment editor for the "Memai Daily Briefing" news bulletin.
+Study the item dossiers below and emit structured beats that feel ready for a morning rundown.
 
-Item notes:
+Item dossiers:
 {batch_summaries}
 
-Return ONLY valid JSON (no prose) matching this schema — one object per item, in the SAME order:
+Return ONLY valid JSON (no prose) — one object per item, in the SAME order — using this schema:
 [
   {{
-    "item_number": <integer provided in the notes>,
-    "group_key": "<2-3 word slug in lowercase, reuse exact slug for related items>",
-    "theme_title": "<5-8 word compelling title>",
-    "one_sentence_summary": "<<=25 words capturing the core insight>",
-    "key_facts": ["<=18 word fact 1 with concrete details", "fact 2", "... optional fact 3"],
-    "context_and_implication": "<=30 words showing broader stakes/trend>",
-    "signals": "<=18 words highlighting forward-looking cue or question>",
-    "tags": ["markets", "earnings", "..."],
-    "source_notes": "<short mention of source type, e.g. 'YouTube deep dive'>"
+    "item_number": <integer provided in the dossier>,
+    "group_key": "<2-3 word slug in lowercase; reuse for related items>",
+    "segment_title": "<6-10 word punchy slug for on-air graphic>",
+    "headline": "<<=18 words broadcast-style headline>",
+    "urgency_score": <integer 1-5 (5 = immediate)>,
+    "urgency_label": "<Immediate|High|Watch|Background>",
+    "why_it_matters": "<=28 words translating impact for the user>",
+    "fast_facts": ["<=12 word fact with concrete detail", "optional fact 2", "optional fact 3"],
+    "soundbite": "<=18 words memorable quote/phrasing (or \"n/a\")>",
+    "format_cue": "<e.g. '🎧 Audio briefing', '📄 Quick read'>",
+    "action_step": "<=14 words suggesting how the user should engage>",
+    "forward_signal": "<=14 words flagging next event or watch item>",
+    "tags": ["markets", "earnings", "policy"],
+    "source_notes": "<mention source nature, e.g. 'YouTube deep dive'>"
   }},
   ...
 ]
 
 Rules:
-- If an item lacks numbers, infer a concrete detail from context (e.g. "signals a sentiment shift among retail investors").
-- Tags must be lowercase single words; include at least one tag per item.
-- Do NOT add commentary outside the JSON payload.`;
+- Invent specific, truthful details only if clearly implied; avoid vagueness.
+- Every item must include at least one fast fact and one tag.
+- Keep language broadcast-ready and free of markdown.`;
 
 /**
  * Map-Reduce Reduce Prompt
  * Combines intermediate analyses into final digest
  */
-export const CLUSTER_SUMMARY_PROMPT = `You are crafting a unified theme brief for "Memai Daily Briefing".
+export const CLUSTER_SUMMARY_PROMPT = `You are producing a segment brief for the "Memai Daily Briefing" host table read.
 Cluster slug: {cluster_slug}
 Candidate titles: {candidate_titles}
 Aggregate tags: {cluster_tags}
+Shared urgency: {cluster_urgency}
+Format cues heard: {cluster_formats}
 Items:
 {cluster_items}
 
-Respond in VALID JSON with this exact shape:
+Reply in VALID JSON using this shape:
 {{
-  "cluster_title": "...",
-  "narrative_paragraph": "...", 
-  "key_takeaways": ["...", "..."],
-  "bridge_sentence": "..." 
+  "segment_name": "<final title for lower-third graphic>",
+  "anchor_intro": "<=55 words stitching the items into one storyline>",
+  "essential_points": ["<=16 word point 1", "point 2", "optional point 3"],
+  "highlight_soundbite": "<=18 words pulling from or inspired by the beats",
+  "recommended_action": "<=16 words telling the user what to do next",
+  "segue": "<=18 words hinting how to transition onward"
 }}
 
 Rules:
-- The narrative paragraph should gracefully combine ALL item facts without bulleting or numbering.
-- Key takeaways must be punchy (<18 words) and non-redundant; include at least two distinct angles.
-- Bridge sentence should hint how to segue into another topic (even if hypothetical).`;
+- Weave all provided facts; never drop consequential details.
+- Keep tone energetic, confident, and conversational for spoken delivery.`;
 
-export const MAP_REDUCE_REDUCE_PROMPT = `You are the showrunner for "Memai Daily Briefing".
+export const MAP_REDUCE_REDUCE_PROMPT = `You are the showrunner scripting the on-air bulletin for "Memai Daily Briefing".
 Date: {digest_date}. Total items: {total_items} (Audio: {audio_count}, Articles: {article_count}).
+Spotlight cluster: {spotlight_slug}
 
-You are given cluster briefs that already blend related items:
+You have curated segment briefs ready for air:
 {cluster_briefs}
 
-Write the final host script as flowing prose (no headings, numbers, or bullet lists). Target 4-5 paragraphs:
-- Paragraph 1: Cold open weaving the strongest cluster into an overarching narrative hook.
-- Middle paragraphs: One per remaining cluster. Integrate their narratives, cite sources conversationally (e.g. "a YouTube deep dive" or "today's blog breakdown"), and explain the stakes and connections.
-- Closing paragraph: Synthesize the day, offer a forward-looking takeaway or question, and sign off with momentum.
+Produce the FINAL transcript in Markdown with this exact layout:
 
-Guidelines:
-- Reuse key takeaways organically; do not repeat them verbatim.
-- Mention variety of sources only when it adds colour or credibility.
-- Keep total length 550-850 words with varied sentence rhythm.
-- Absolutely avoid explicit section labels, bullets, or enumerated lists.`;
+## TL;DR
+- Bullet 1 (<=12 words, concrete takeaway)
+- Bullet 2
+- Bullet 3
+
+## Spotlight Story
+<One tight paragraph (<=110 words) using the spotlight cluster. Include urgency label and format cues inline (e.g. "[Immediate • 🎧]").>
+
+## Need-to-Know
+<1 paragraph synthesising the remaining high-urgency clusters (urgency_score >=4). Reference recommended actions.>
+
+## Signals & Next Steps
+<1 paragraph covering watch/background clusters, emphasising forward signals and segue guidance.>
+
+Tone: authoritative, friendly, time-efficient. Keep total length 420-650 words.
+Mandatory: weave in the provided soundbites or adapt them into natural speech.
+Do NOT invent new sections or add closing salutations.`;
 
 // ============================================
 // Metadata Formatting Helpers
