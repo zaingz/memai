@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
-import type { DailyDigest } from '../types';
-import { generateDailyDigest, getDailyDigest, listDailyDigests } from '../lib/api';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { DailyDigest, Bookmark } from '../types';
+import { generateDailyDigest, getDailyDigest, listDailyDigests, listBookmarks } from '../lib/api';
+import { formatDate, extractHostname } from '../lib/formatters';
+import './DailyDigestView.css';
 
 interface DailyDigestViewProps {
   isOpen: boolean;
@@ -10,6 +14,7 @@ interface DailyDigestViewProps {
 export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
   const [digests, setDigests] = useState<DailyDigest[]>([]);
   const [selectedDigest, setSelectedDigest] = useState<DailyDigest | null>(null);
+  const [digestBookmarks, setDigestBookmarks] = useState<Bookmark[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +24,12 @@ export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
       loadDigests();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (selectedDigest) {
+      loadDigestBookmarks();
+    }
+  }, [selectedDigest]);
 
   const loadDigests = async () => {
     setIsLoading(true);
@@ -36,13 +47,37 @@ export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
     }
   };
 
+  const loadDigestBookmarks = async () => {
+    if (!selectedDigest) return;
+
+    try {
+      const response = await listBookmarks();
+
+      // Filter bookmarks by the digest date range
+      const digestDate = new Date(selectedDigest.digest_date);
+      digestDate.setHours(0, 0, 0, 0);
+
+      const nextDay = new Date(digestDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+
+      const filtered = response.bookmarks.filter(bookmark => {
+        const bookmarkDate = new Date(bookmark.created_at);
+        return bookmarkDate >= digestDate && bookmarkDate < nextDay;
+      });
+
+      setDigestBookmarks(filtered);
+    } catch (err) {
+      console.error('Failed to load bookmarks:', err);
+    }
+  };
+
   const handleGenerateDigest = async () => {
     setIsGenerating(true);
     setError(null);
     try {
       const response = await generateDailyDigest();
       setSelectedDigest(response.digest);
-      await loadDigests(); // Refresh list
+      await loadDigests();
     } catch (err: any) {
       setError(err.message || 'Failed to generate digest');
     } finally {
@@ -50,7 +85,7 @@ export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
     }
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDigestDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
       weekday: 'long',
@@ -60,252 +95,187 @@ export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
     });
   };
 
-  const getStatusBadge = (status: string) => {
-    const statusColors = {
-      completed: 'rgba(34, 197, 94, 0.15)',
-      pending: 'rgba(234, 179, 8, 0.15)',
-      processing: 'rgba(59, 130, 246, 0.15)',
-      failed: 'rgba(239, 68, 68, 0.15)',
-    };
-    const statusTextColors = {
-      completed: '#86efac',
-      pending: '#fde047',
-      processing: '#93c5fd',
-      failed: '#fca5a5',
-    };
-
-    return (
-      <span
-        style={{
-          padding: '0.35rem 0.7rem',
-          borderRadius: '999px',
-          fontSize: '0.75rem',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          fontWeight: 600,
-          background: statusColors[status as keyof typeof statusColors] || statusColors.pending,
-          color: statusTextColors[status as keyof typeof statusTextColors] || statusTextColors.pending,
-          border: '1px solid currentColor',
-        }}
-      >
-        {status}
-      </span>
-    );
-  };
-
   if (!isOpen) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0, 0, 0, 0.7)',
-        backdropFilter: 'blur(8px)',
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '2rem',
-      }}
-      onClick={onClose}
-    >
-      <div
-        className="glass-panel"
-        style={{
-          maxWidth: '900px',
-          width: '100%',
-          maxHeight: '85vh',
-          overflow: 'auto',
-          padding: '2rem',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-          <h2 style={{ margin: 0, fontSize: '1.75rem' }}>Daily Digests</h2>
-          <div style={{ display: 'flex', gap: '1rem' }}>
-            <button
-              onClick={handleGenerateDigest}
-              disabled={isGenerating}
-              style={{
-                padding: '0.75rem 1.5rem',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'linear-gradient(145deg, rgba(59, 130, 246, 0.8), rgba(37, 99, 235, 0.9))',
-                color: 'white',
-                fontWeight: 600,
-                cursor: isGenerating ? 'not-allowed' : 'pointer',
-                opacity: isGenerating ? 0.6 : 1,
-              }}
-            >
-              {isGenerating ? 'Generating...' : '+ Generate Today'}
-            </button>
-            <button
-              onClick={onClose}
-              style={{
-                padding: '0.75rem 1.5rem',
-                borderRadius: '8px',
-                border: '1px solid rgba(148, 163, 184, 0.18)',
-                background: 'rgba(15, 23, 42, 0.75)',
-                color: '#f8fafc',
-                cursor: 'pointer',
-              }}
-            >
-              Close
-            </button>
-          </div>
+    <>
+      <div className="modal-overlay" onClick={onClose} />
+      <div className="daily-digest-modal">
+        <button
+          className="modal-close"
+          onClick={onClose}
+          aria-label="Close"
+        >
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path
+              fillRule="evenodd"
+              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+
+        <div className="daily-digest-header">
+          <h2>Daily Digests</h2>
+          <button
+            onClick={handleGenerateDigest}
+            disabled={isGenerating}
+            className="btn btn-primary"
+          >
+            {isGenerating ? (
+              <>
+                <span className="button-spinner"></span>
+                Generating...
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+                Generate Today
+              </>
+            )}
+          </button>
         </div>
 
         {error && (
-          <div
-            style={{
-              padding: '0.75rem',
-              marginBottom: '1rem',
-              borderRadius: '8px',
-              background: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              color: '#fca5a5',
-            }}
-          >
-            {error}
+          <div className="error-banner">
+            <p>{error}</p>
+            <button onClick={() => setError(null)}>Dismiss</button>
           </div>
         )}
 
         {isLoading ? (
-          <div className="loading" style={{ justifyContent: 'center', marginTop: '2rem' }}>
-            <span></span>
-            <span></span>
-            <span></span>
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <p>Loading digests...</p>
+          </div>
+        ) : digests.length === 0 ? (
+          <div className="empty-state">
+            <svg className="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3>No digests yet</h3>
+            <p>Generate your first daily digest to get started</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '2rem' }}>
-            {/* Left sidebar - digest list */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h3 style={{ fontSize: '0.875rem', textTransform: 'uppercase', color: 'rgba(148, 163, 184, 0.85)', margin: '0 0 0.5rem' }}>
-                Recent Digests
-              </h3>
-              {digests.length === 0 ? (
-                <p className="muted" style={{ fontSize: '0.875rem' }}>
-                  No digests yet. Generate your first one!
-                </p>
-              ) : (
-                digests.map((digest) => (
+          <div className="daily-digest-layout">
+            {/* Digest List Sidebar */}
+            <div className="digest-list">
+              <h3>Recent Digests</h3>
+              <div className="digest-list-items">
+                {digests.map((digest) => (
                   <button
                     key={digest.id}
                     onClick={() => setSelectedDigest(digest)}
-                    style={{
-                      padding: '1rem',
-                      borderRadius: '12px',
-                      border: selectedDigest?.id === digest.id
-                        ? '1px solid rgba(59, 130, 246, 0.55)'
-                        : '1px solid rgba(148, 163, 184, 0.12)',
-                      background: selectedDigest?.id === digest.id
-                        ? 'rgba(59, 130, 246, 0.1)'
-                        : 'rgba(15, 23, 42, 0.6)',
-                      color: '#f8fafc',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                    }}
+                    className={`digest-list-item ${selectedDigest?.id === digest.id ? 'active' : ''}`}
                   >
-                    <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-                      {formatDate(digest.digest_date)}
+                    <div className="digest-list-item-date">
+                      {formatDigestDate(digest.digest_date)}
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="muted" style={{ fontSize: '0.75rem' }}>
+                    <div className="digest-list-item-meta">
+                      <span className="digest-list-item-count">
                         {digest.bookmark_count} bookmarks
                       </span>
-                      {getStatusBadge(digest.status)}
+                      <span className={`digest-status-badge digest-status-badge--${digest.status}`}>
+                        {digest.status}
+                      </span>
                     </div>
                   </button>
-                ))
-              )}
+                ))}
+              </div>
             </div>
 
-            {/* Right panel - digest content */}
-            <div>
+            {/* Digest Content */}
+            <div className="digest-content">
               {selectedDigest ? (
-                <div>
-                  <div style={{ marginBottom: '1.5rem' }}>
-                    <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>
-                      {formatDate(selectedDigest.digest_date)}
-                    </h3>
-                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                      {getStatusBadge(selectedDigest.status)}
-                      <span className="muted" style={{ fontSize: '0.875rem' }}>
+                <>
+                  {/* Digest Header */}
+                  <div className="digest-content-header">
+                    <h2>{formatDigestDate(selectedDigest.digest_date)}</h2>
+                    <div className="digest-content-meta">
+                      <span className={`digest-status-badge digest-status-badge--${selectedDigest.status}`}>
+                        {selectedDigest.status}
+                      </span>
+                      <span className="digest-bookmark-count">
                         {selectedDigest.bookmark_count} bookmarks
                       </span>
                     </div>
                   </div>
 
-                  {selectedDigest.sources_breakdown && (
-                    <div style={{ marginBottom: '1.5rem' }}>
-                      <h4 style={{ fontSize: '0.875rem', textTransform: 'uppercase', color: 'rgba(148, 163, 184, 0.85)', marginBottom: '0.75rem' }}>
-                        Sources
-                      </h4>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                        {Object.entries(selectedDigest.sources_breakdown).map(([source, count]) => (
-                          count ? (
-                            <span
-                              key={source}
-                              style={{
-                                padding: '0.35rem 0.7rem',
-                                borderRadius: '999px',
-                                fontSize: '0.75rem',
-                                background: 'rgba(59, 130, 246, 0.15)',
-                                color: '#93c5fd',
-                                border: '1px solid rgba(59, 130, 246, 0.3)',
-                              }}
-                            >
-                              {source}: {count}
-                            </span>
-                          ) : null
-                        ))}
+                  {/* Bookmarks Carousel */}
+                  {digestBookmarks.length > 0 && (
+                    <div className="bookmarks-carousel">
+                      <h3>Bookmarks in this digest</h3>
+                      <div className="bookmarks-carousel-scroll">
+                        {digestBookmarks.map((bookmark) => {
+                          const preview = bookmark.metadata?.linkPreview;
+                          return (
+                            <div key={bookmark.id} className="bookmark-carousel-card">
+                              {preview?.thumbnailUrl ? (
+                                <div className="bookmark-carousel-card-thumbnail">
+                                  <img src={preview.thumbnailUrl} alt={preview.title || 'Bookmark'} />
+                                </div>
+                              ) : (
+                                <div className="bookmark-carousel-card-thumbnail-fallback">
+                                  <svg viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
+                                  </svg>
+                                </div>
+                              )}
+                              <div className="bookmark-carousel-card-content">
+                                <div className="bookmark-carousel-card-title">
+                                  {preview?.title || bookmark.title || extractHostname(bookmark.url)}
+                                </div>
+                                <div className="bookmark-carousel-card-source">
+                                  {bookmark.source}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
 
+                  {/* Sources Breakdown */}
+                  {selectedDigest.sources_breakdown && (
+                    <div className="sources-breakdown">
+                      <h3>Sources</h3>
+                      <div className="sources-tags">
+                        {Object.entries(selectedDigest.sources_breakdown).map(([source, count]) =>
+                          count ? (
+                            <span key={source} className="source-tag">
+                              {source}: {count}
+                            </span>
+                          ) : null
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Digest Summary */}
                   {selectedDigest.status === 'completed' && selectedDigest.digest_content ? (
-                    <div>
-                      <h4 style={{ fontSize: '0.875rem', textTransform: 'uppercase', color: 'rgba(148, 163, 184, 0.85)', marginBottom: '0.75rem' }}>
-                        Summary
-                      </h4>
-                      <div
-                        style={{
-                          padding: '1.5rem',
-                          borderRadius: '12px',
-                          background: 'rgba(15, 23, 42, 0.6)',
-                          border: '1px solid rgba(148, 163, 184, 0.12)',
-                          whiteSpace: 'pre-wrap',
-                          lineHeight: '1.6',
-                        }}
-                      >
-                        {selectedDigest.digest_content}
+                    <div className="digest-summary">
+                      <h3>Summary</h3>
+                      <div className="markdown-content">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {selectedDigest.digest_content}
+                        </ReactMarkdown>
                       </div>
                     </div>
                   ) : selectedDigest.status === 'failed' ? (
-                    <div
-                      style={{
-                        padding: '1rem',
-                        borderRadius: '8px',
-                        background: 'rgba(239, 68, 68, 0.15)',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        color: '#fca5a5',
-                      }}
-                    >
+                    <div className="digest-error">
                       <strong>Generation failed:</strong> {selectedDigest.error_message || 'Unknown error'}
                     </div>
                   ) : (
-                    <div className="muted" style={{ textAlign: 'center', padding: '2rem' }}>
+                    <div className="digest-processing">
                       Digest is {selectedDigest.status}...
                     </div>
                   )}
-                </div>
+                </>
               ) : (
-                <div className="muted" style={{ textAlign: 'center', padding: '2rem' }}>
+                <div className="digest-empty">
                   Select a digest to view details
                 </div>
               )}
@@ -313,6 +283,6 @@ export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
