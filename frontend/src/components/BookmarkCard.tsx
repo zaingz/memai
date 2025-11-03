@@ -38,7 +38,7 @@ export function BookmarkCard({ bookmark, isActive, onSelect }: BookmarkCardProps
 
   return (
     <article
-      className={clsx("bookmark-card glass-panel", { "bookmark-card--active": isActive })}
+      className={clsx("bookmark-card card card-interactive", { "bookmark-card--active": isActive })}
       onClick={() => onSelect(bookmark)}
       role="button"
       tabIndex={0}
@@ -49,34 +49,41 @@ export function BookmarkCard({ bookmark, isActive, onSelect }: BookmarkCardProps
         }
       }}
     >
-      <div className="bookmark-card__thumbnail">
+      <div className="bookmark-card-thumbnail">
         {thumbnail ? (
           <img src={thumbnail} alt={title ?? "Bookmark preview"} loading="lazy" />
         ) : (
           <div
-            className="bookmark-card__thumbnail-fallback"
-            style={{ background: preview?.accentColor || "rgba(15, 23, 42, 0.7)" }}
+            className="bookmark-card-thumbnail-fallback"
+            style={{
+              background: preview?.accentColor || "rgba(15, 23, 42, 0.7)",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              height: "100%",
+              gap: "0.5rem",
+              color: "rgba(148, 163, 184, 0.8)"
+            }}
           >
-            <div className="bookmark-card__thumbnail-favicon">
-              {favicon ? (
-                <img src={favicon} alt="Site icon" style={{ width: "24px", height: "24px" }} loading="lazy" />
-              ) : (
-                <span role="img" aria-label="link">
-                  🔖
-                </span>
-              )}
-            </div>
-            <span>{extractHostname(bookmark.url)}</span>
+            {favicon ? (
+              <img src={favicon} alt="Site icon" style={{ width: "32px", height: "32px" }} loading="lazy" />
+            ) : (
+              <span role="img" aria-label="link" style={{ fontSize: "2rem" }}>
+                🔖
+              </span>
+            )}
+            <span style={{ fontSize: "0.875rem", fontWeight: 500 }}>{extractHostname(bookmark.url)}</span>
           </div>
         )}
+        <span className="bookmark-card-badge">{badgeLabel}</span>
       </div>
-      <div className="bookmark-card__body">
-        <div className="bookmark-card__meta">
-          <span className="badge">{badgeLabel}</span>
-          <span className="muted">{hostname}</span>
+      <div className="card-body">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+          <span className="muted" style={{ fontSize: "0.75rem" }}>{hostname}</span>
         </div>
-        <h3 className="bookmark-card__title">{title}</h3>
-        {description && description.length > 10 && <p className="muted">{description}</p>}
+        <h3 className="card-title" style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>{title}</h3>
+        {description && description.length > 10 && <p className="muted" style={{ fontSize: "0.875rem", lineHeight: "1.4" }}>{description}</p>}
       </div>
     </article>
   );
