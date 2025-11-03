@@ -78,10 +78,10 @@ export function createBookmark(data: {
 }
 
 // Daily Digest API Functions
-export function generateDailyDigest(date?: string): Promise<import("../types").GenerateDailyDigestResponse> {
+export function generateDailyDigest(date?: string, forceRegenerate?: boolean): Promise<import("../types").GenerateDailyDigestResponse> {
   return request(`/digests/generate`, {
     method: "POST",
-    body: date ? JSON.stringify({ date }) : undefined,
+    body: JSON.stringify({ date, forceRegenerate }),
   });
 }
 

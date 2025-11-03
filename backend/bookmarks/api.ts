@@ -291,7 +291,7 @@ export const generateDailyDigest = api(
       const digest = await dailyDigestService.generateDailyDigest({
         date: digestDate,
         userId,
-        forceRegenerate: false,
+        forceRegenerate: req?.forceRegenerate ?? false,
       });
 
       return {

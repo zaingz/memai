@@ -69,6 +69,8 @@ export interface GenerateDailyDigestRequest {
   date?: string; // ISO date string (YYYY-MM-DD)
   // Optional user_id for future scoping (not used yet)
   user_id?: string;
+  // Force regeneration even if digest already exists
+  forceRegenerate?: boolean;
 }
 
 // Generate daily digest response

@@ -95,7 +95,7 @@ export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
       const digestDate = new Date(selectedDigest.digest_date);
       const dateString = digestDate.toISOString().split('T')[0];
 
-      const response = await generateDailyDigest(dateString);
+      const response = await generateDailyDigest(dateString, true); // Force regenerate
       setSelectedDigest(response.digest);
       await loadDigests();
     } catch (err: any) {
