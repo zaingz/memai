@@ -34,6 +34,18 @@ export function formatRelativeTime(value: string | Date): string {
   return formatter.format(Math.round(duration), "years");
 }
 
+export function formatDateTime(value: string | Date): string {
+  if (!value) return "-";
+  const date = typeof value === "string" ? new Date(value) : value;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export function formatDuration(seconds: number | null): string {
   if (!seconds) return "-";
   const minutes = Math.floor(seconds / 60);
@@ -44,6 +56,30 @@ export function formatDuration(seconds: number | null): string {
   const hours = Math.floor(minutes / 60);
   const remainderMinutes = minutes % 60;
   return `${hours}h ${remainderMinutes}m`;
+}
+
+export function formatNumber(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+
+  return new Intl.NumberFormat().format(value);
+}
+
+export function formatPercentage(
+  value: number | null | undefined,
+  options: { maximumFractionDigits?: number } = {}
+): string {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+
+  const formatter = new Intl.NumberFormat(undefined, {
+    style: "percent",
+    maximumFractionDigits: options.maximumFractionDigits ?? 0,
+  });
+
+  return formatter.format(value);
 }
 
 export function extractHostname(url: string): string {
