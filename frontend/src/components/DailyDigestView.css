@@ -37,7 +37,7 @@
 }
 
 /* Modal Close Button */
-.modal-close {
+.daily-digest-modal .modal-close {
   width: 36px;
   height: 36px;
   min-width: 36px; /* Ensure minimum width */
@@ -53,20 +53,24 @@
   padding: 0;
   flex-shrink: 0; /* Never shrink */
   margin-left: 0.5rem; /* Extra margin from Generate Today button */
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: auto;
 }
 
-.modal-close:hover {
+.daily-digest-modal .modal-close:hover {
   background: rgba(30, 41, 59, 0.9);
   border-color: rgba(148, 163, 184, 0.3);
   color: #f1f5f9;
   transform: scale(1.05);
 }
 
-.modal-close:active {
+.daily-digest-modal .modal-close:active {
   transform: scale(0.95);
 }
 
-.modal-close svg {
+.daily-digest-modal .modal-close svg {
   width: 20px;
   height: 20px;
 }
@@ -547,14 +551,14 @@
     gap: 0.5rem;
   }
 
-  .modal-close {
+  .daily-digest-modal .modal-close {
     width: 32px;
     height: 32px;
     order: -1; /* Move close button to top on mobile */
     align-self: flex-end;
   }
 
-  .modal-close svg {
+  .daily-digest-modal .modal-close svg {
     width: 18px;
     height: 18px;
   }

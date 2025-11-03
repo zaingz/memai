@@ -165,7 +165,7 @@ export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
             )}
           </button>
           <button
-            className="modal-close"
+            className="modal-close daily-digest-close"
             onClick={onClose}
             aria-label="Close"
           >
