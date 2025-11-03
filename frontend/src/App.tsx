@@ -6,6 +6,7 @@ import { LoginPage } from './pages/auth/LoginPage';
 import { SignupPage } from './pages/auth/SignupPage';
 import { BookmarksApp } from './pages/BookmarksApp';
 import { queryClient } from './lib/queryClient';
+import { AppShell } from './components/layout';
 
 export default function App() {
   return (
@@ -22,7 +23,9 @@ export default function App() {
               path="/"
               element={
                 <ProtectedRoute>
-                  <BookmarksApp />
+                  <AppShell>
+                    <BookmarksApp />
+                  </AppShell>
                 </ProtectedRoute>
               }
             />

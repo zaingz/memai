@@ -120,64 +120,9 @@ export function BookmarksApp() {
   };
 
   return (
-    <div className="app-shell">
-      <header className="header">
-        <div className="header__top">
-          <div className="header__title">
-            <h1>Bookmarks</h1>
-            <span>{bookmarks.length} saved</span>
-          </div>
-          <div className="header__actions">
-            <div className="header__search">
-              <span className="header__search-icon" aria-hidden="true">
-                🔍
-              </span>
-              <input
-                type="search"
-                placeholder="Search titles, descriptions, or URLs"
-                value={searchQuery}
-                onChange={event => setSearchQuery(event.target.value)}
-              />
-            </div>
-            <button
-              onClick={() => setShowDigestModal(true)}
-              style={{
-                padding: '0.5rem 1rem',
-                borderRadius: '6px',
-                border: '1px solid rgba(148, 163, 184, 0.18)',
-                background: 'rgba(15, 23, 42, 0.75)',
-                color: '#f8fafc',
-                cursor: 'pointer',
-                fontSize: '0.875rem',
-                marginLeft: '1rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-              }}
-            >
-              📊 Daily Digest
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: '1rem' }}>
-              <span className="muted" style={{ fontSize: '0.875rem' }}>
-                {user?.email}
-              </span>
-              <button
-                onClick={handleSignOut}
-                style={{
-                  padding: '0.5rem 1rem',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(148, 163, 184, 0.18)',
-                  background: 'rgba(15, 23, 42, 0.75)',
-                  color: '#f8fafc',
-                  cursor: 'pointer',
-                  fontSize: '0.875rem',
-                }}
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-        </div>
+    <div className="bookmarks-container">
+      {/* Quick Stats Bar */}
+      <div className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1rem' }}>
         <div className="metrics-bar">
           <div className="metric-card">
             <span>with thumbnails</span>
@@ -192,7 +137,39 @@ export function BookmarksApp() {
             <strong>{lastUpdatedLabel || "—"}</strong>
           </div>
         </div>
-      </header>
+      </div>
+
+      {/* Search and Actions Bar */}
+      <div className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <div className="header__search" style={{ flex: 1, minWidth: '300px' }}>
+            <span className="header__search-icon" aria-hidden="true">
+              🔍
+            </span>
+            <input
+              type="search"
+              placeholder="Search titles, descriptions, or URLs"
+              value={searchQuery}
+              onChange={event => setSearchQuery(event.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.75rem 1rem 0.75rem 2.5rem',
+                background: 'var(--glass-medium)',
+                border: '1px solid var(--border-color-subtle)',
+                borderRadius: 'var(--radius-lg)',
+                color: 'var(--text-primary)',
+                fontSize: 'var(--text-body-base-size)',
+              }}
+            />
+          </div>
+          <button
+            onClick={() => setShowDigestModal(true)}
+            className="btn btn-secondary"
+          >
+            📊 Daily Digest
+          </button>
+        </div>
+      </div>
 
       {error && (
         <div className="empty-state">
@@ -217,7 +194,7 @@ export function BookmarksApp() {
         </div>
       ) : (
         <div className="main-layout">
-          <section className="bookmark-grid" aria-label="Bookmark results">
+          <section className="card-grid" aria-label="Bookmark results">
             {filteredBookmarks.map(bookmark => (
               <BookmarkCard
                 key={bookmark.id}
