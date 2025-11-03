@@ -23,9 +23,7 @@ export default function App() {
               path="/"
               element={
                 <ProtectedRoute>
-                  <AppShell>
-                    <BookmarksApp />
-                  </AppShell>
+                  <BookmarksApp />
                 </ProtectedRoute>
               }
             />

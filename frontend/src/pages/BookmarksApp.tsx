@@ -4,17 +4,8 @@ import { listBookmarks, getBookmarkDetails } from "../lib/api";
 import { BookmarkCard } from "../components/BookmarkCard";
 import { BookmarkDetails } from "../components/BookmarkDetails";
 import { DailyDigestView } from "../components/DailyDigestView";
-import { extractHostname, formatRelativeTime } from "../lib/formatters";
 import { useAuth } from "../contexts/AuthContext";
-
-function computeMetrics(bookmarks: Bookmark[]) {
-  const thumbnails = bookmarks.filter(b => b.metadata?.linkPreview?.thumbnailUrl).length;
-  const domains = new Set(bookmarks.map(b => extractHostname(b.url)));
-  return {
-    thumbnails,
-    domains: domains.size,
-  };
-}
+import "./BookmarksApp.css";
 
 export function BookmarksApp() {
   const { signOut, user } = useAuth();
@@ -26,13 +17,13 @@ export function BookmarksApp() {
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDigestModal, setShowDigestModal] = useState(false);
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
 
   useEffect(() => {
     setIsLoading(true);
     listBookmarks()
       .then(response => {
         setBookmarks(response.bookmarks);
-        setSelectedId(response.bookmarks[0]?.id ?? null);
       })
       .catch(err => {
         console.error(err);
@@ -47,7 +38,6 @@ export function BookmarksApp() {
       return;
     }
 
-    // Only fetch if we don't have details for this bookmark ID already
     if (details?.bookmark.id === selectedId) {
       return;
     }
@@ -76,158 +66,165 @@ export function BookmarksApp() {
     });
   }, [bookmarks, searchQuery]);
 
-  useEffect(() => {
-    if (!filteredBookmarks.length) {
-      setSelectedId(null);
-      return;
-    }
-
-    if (selectedId === null) {
-      return;
-    }
-
-    if (!filteredBookmarks.some(bookmark => bookmark.id === selectedId)) {
-      setSelectedId(filteredBookmarks[0].id);
-    }
-  }, [filteredBookmarks, selectedId]);
-
   const selectedBookmark = useMemo(
     () => bookmarks.find(bookmark => bookmark.id === selectedId) ?? null,
     [bookmarks, selectedId]
   );
 
-  const metrics = useMemo(() => computeMetrics(bookmarks), [bookmarks]);
-
-  const lastUpdatedLabel = useMemo(() => {
-    if (!bookmarks.length) return "";
-    const latest = bookmarks.reduce((latestBookmark, current) =>
-      new Date(current.updated_at) > new Date(latestBookmark.updated_at)
-        ? current
-        : latestBookmark
-    );
-    return formatRelativeTime(latest.updated_at);
-  }, [bookmarks]);
-
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 1024;
-  const isDetailsOpen = Boolean(selectedBookmark);
-
-  const handleSignOut = async () => {
-    try {
-      await signOut();
-    } catch (err) {
-      console.error('Sign out error:', err);
-    }
-  };
-
   return (
-    <div className="bookmarks-container">
-      {/* Quick Stats Bar */}
-      <div className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1rem' }}>
-        <div className="metrics-bar">
-          <div className="metric-card">
-            <span>with thumbnails</span>
-            <strong>{metrics.thumbnails}</strong>
+    <div className="app-container">
+      {/* Header */}
+      <header className="app-header">
+        <div className="header-content">
+          <div className="header-left">
+            <h1 className="app-title">Bookmarks</h1>
+            <span className="bookmark-count">{filteredBookmarks.length} items</span>
           </div>
-          <div className="metric-card metric-card--secondary">
-            <span>unique domains</span>
-            <strong>{metrics.domains}</strong>
-          </div>
-          <div className="metric-card">
-            <span>last updated</span>
-            <strong>{lastUpdatedLabel || "—"}</strong>
-          </div>
-        </div>
-      </div>
 
-      {/* Search and Actions Bar */}
-      <div className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-          <div className="header__search" style={{ flex: 1, minWidth: '300px' }}>
-            <span className="header__search-icon" aria-hidden="true">
-              🔍
-            </span>
-            <input
-              type="search"
-              placeholder="Search titles, descriptions, or URLs"
-              value={searchQuery}
-              onChange={event => setSearchQuery(event.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.75rem 1rem 0.75rem 2.5rem',
-                background: 'var(--glass-medium)',
-                border: '1px solid var(--border-color-subtle)',
-                borderRadius: 'var(--radius-lg)',
-                color: 'var(--text-primary)',
-                fontSize: 'var(--text-body-base-size)',
-              }}
-            />
+          <div className="header-center">
+            <div className="search-container desktop-only">
+              <svg className="search-icon" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+              </svg>
+              <input
+                type="search"
+                className="search-input"
+                placeholder="Search bookmarks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
           </div>
-          <button
-            onClick={() => setShowDigestModal(true)}
-            className="btn btn-secondary"
-          >
-            📊 Daily Digest
-          </button>
-        </div>
-      </div>
 
-      {error && (
-        <div className="empty-state">
-          <h3>We hit a snag</h3>
-          <p>{error}</p>
-        </div>
-      )}
+          <div className="header-right">
+            <button
+              className="icon-button mobile-only"
+              onClick={() => setShowMobileSearch(!showMobileSearch)}
+              aria-label="Search"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+              </svg>
+            </button>
 
-      {isLoading ? (
-        <div className="empty-state">
-          <div className="loading">
-            <span />
-            <span />
-            <span />
-            Loading your bookmarks…
+            <button
+              className="icon-button"
+              onClick={() => setShowDigestModal(true)}
+              aria-label="Daily Digest"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zM7 8H5v2h2V8zm2 0h2v2H9V8zm6 0h-2v2h2V8z" clipRule="evenodd" />
+              </svg>
+            </button>
+
+            <button
+              className="icon-button"
+              onClick={signOut}
+              aria-label="Sign Out"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clipRule="evenodd" />
+              </svg>
+            </button>
           </div>
         </div>
-      ) : filteredBookmarks.length === 0 ? (
-        <div className="empty-state">
-          <h3>No bookmarks found</h3>
-          <p>Try a different search or add a new bookmark from the extension.</p>
-        </div>
-      ) : (
+
+        {/* Mobile Search Bar */}
+        {showMobileSearch && (
+          <div className="mobile-search-bar">
+            <div className="search-container">
+              <svg className="search-icon" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+              </svg>
+              <input
+                type="search"
+                className="search-input"
+                placeholder="Search bookmarks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                autoFocus
+              />
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* Main Content */}
+      <main className="app-main">
+        {error && (
+          <div className="error-banner">
+            <p>{error}</p>
+            <button onClick={() => setError(null)}>Dismiss</button>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <p>Loading bookmarks...</p>
+          </div>
+        ) : filteredBookmarks.length === 0 ? (
+          <div className="empty-state">
+            <svg className="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+            </svg>
+            <h2>No bookmarks found</h2>
+            <p>
+              {searchQuery
+                ? "Try adjusting your search terms"
+                : "Save your first bookmark to get started"}
+            </p>
+          </div>
+        ) : (
+          <div className="bookmarks-grid">
+            {filteredBookmarks.map(bookmark => (
+              <BookmarkCard
+                key={bookmark.id}
+                bookmark={bookmark}
+                isActive={bookmark.id === selectedId}
+                onSelect={(bookmark) => setSelectedId(bookmark.id)}
+              />
+            ))}
+          </div>
+        )}
+      </main>
+
+      {/* Details Modal */}
+      {selectedBookmark && (
         <>
-          <div className="main-layout">
-            <section className="card-grid" aria-label="Bookmark results">
-              {filteredBookmarks.map(bookmark => (
-                <BookmarkCard
-                  key={bookmark.id}
-                  bookmark={bookmark}
-                  isActive={bookmark.id === selectedId}
-                  onSelect={(bookmark) => setSelectedId(bookmark.id)}
-                />
-              ))}
-            </section>
-          </div>
-          <BookmarkDetails
-            bookmark={selectedBookmark}
-            details={details}
-            onClose={() => setSelectedId(null)}
-            isOpen={isDetailsOpen}
+          <div
+            className="modal-overlay"
+            onClick={() => setSelectedId(null)}
           />
+          <div className="details-modal">
+            <button
+              className="modal-close"
+              onClick={() => setSelectedId(null)}
+              aria-label="Close"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+
+            {isDetailsLoading ? (
+              <div className="loading-container">
+                <div className="loading-spinner"></div>
+                <p>Loading details...</p>
+              </div>
+            ) : (
+              <BookmarkDetails
+                bookmark={selectedBookmark}
+                details={details}
+                onClose={() => setSelectedId(null)}
+                isOpen={true}
+              />
+            )}
+          </div>
         </>
       )}
 
-      {isDetailsOpen && isMobile && (
-        <div className="mobile-overlay" aria-hidden={!isMobile}>
-          {isDetailsLoading && (
-            <div className="loading" style={{ justifyContent: "center", marginTop: "2rem" }}>
-              <span />
-              <span />
-              <span />
-              Fetching details…
-            </div>
-          )}
-        </div>
-      )}
-
+      {/* Daily Digest Modal */}
       <DailyDigestView
         isOpen={showDigestModal}
         onClose={() => setShowDigestModal(false)}
