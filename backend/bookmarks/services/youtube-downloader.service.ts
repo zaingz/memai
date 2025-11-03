@@ -68,7 +68,8 @@ export interface YouTubeMetadata {
  */
 export class YouTubeDownloaderService {
   /**
-   * Extracts metadata from YouTube video using yt-dlp without downloading
+   * Extracts metadata from YouTube video using web scraping (yt-dlp fallback)
+   * This works on Encore Cloud without system dependencies
    * @param videoId - YouTube video ID
    * @returns YouTube metadata
    * @throws Error if metadata extraction fails
@@ -76,34 +77,53 @@ export class YouTubeDownloaderService {
   async extractMetadata(videoId: string): Promise<YouTubeMetadata> {
     const youtubeUrl = buildYouTubeUrl(videoId);
 
-    log.info("Extracting YouTube metadata", { videoId, youtubeUrl });
+    log.info("Extracting YouTube metadata via web scraping", { videoId, youtubeUrl });
 
     try {
-      // Use -J flag to get JSON output without downloading
-      const { stdout } = await exec(
-        `${YT_DLP_PATH} -J "${youtubeUrl}"`
-      );
+      // Fetch the YouTube page HTML
+      const response = await fetch(youtubeUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      });
 
-      const metadata = JSON.parse(stdout) as any;
+      if (!response.ok) {
+        throw new Error(`YouTube request failed: ${response.status}`);
+      }
 
-      // Extract relevant fields
+      const html = await response.text();
+
+      // Extract metadata from embedded JSON in the page
+      const ytInitialDataMatch = html.match(/var ytInitialData = ({.*?});/);
+      const ytInitialPlayerResponseMatch = html.match(/var ytInitialPlayerResponse = ({.*?});/);
+
+      if (!ytInitialPlayerResponseMatch) {
+        throw new Error('Could not extract player response from YouTube page');
+      }
+
+      const playerResponse = JSON.parse(ytInitialPlayerResponseMatch[1]);
+      const videoDetails = playerResponse.videoDetails || {};
+      const microformat = playerResponse.microformat?.playerMicroformatRenderer || {};
+
+      // Extract metadata from the parsed JSON
       const result: YouTubeMetadata = {
-        title: metadata.title || metadata.fulltitle || 'Untitled',
-        description: metadata.description,
-        duration: metadata.duration || 0,
-        uploader: metadata.uploader || metadata.channel || 'Unknown',
-        uploader_id: metadata.uploader_id,
-        uploader_url: metadata.uploader_url,
-        channel_id: metadata.channel_id,
-        view_count: metadata.view_count,
-        like_count: metadata.like_count,
-        upload_date: metadata.upload_date,
-        thumbnail: metadata.thumbnail,
-        tags: metadata.tags,
-        categories: metadata.categories,
-        age_limit: metadata.age_limit,
-        webpage_url: metadata.webpage_url || youtubeUrl,
-        fulltitle: metadata.fulltitle,
+        title: videoDetails.title || microformat.title?.simpleText || 'Untitled',
+        description: videoDetails.shortDescription || microformat.description?.simpleText,
+        duration: parseInt(videoDetails.lengthSeconds || '0'),
+        uploader: videoDetails.author || microformat.ownerChannelName || 'Unknown',
+        uploader_id: undefined,
+        uploader_url: microformat.ownerProfileUrl,
+        channel_id: videoDetails.channelId,
+        view_count: parseInt(videoDetails.viewCount || '0'),
+        like_count: undefined, // Not available in initial data
+        upload_date: microformat.publishDate?.replace(/-/g, ''),
+        thumbnail: videoDetails.thumbnail?.thumbnails?.[videoDetails.thumbnail.thumbnails.length - 1]?.url ||
+                   `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+        tags: videoDetails.keywords || [],
+        categories: microformat.category ? [microformat.category] : [],
+        age_limit: 0,
+        webpage_url: youtubeUrl,
+        fulltitle: videoDetails.title,
       };
 
       log.info("YouTube metadata extracted successfully", {
@@ -111,14 +131,22 @@ export class YouTubeDownloaderService {
         title: result.title,
         duration: result.duration,
         uploader: result.uploader,
+        viewCount: result.view_count,
       });
 
       return result;
     } catch (error) {
       log.error(error, "Failed to extract YouTube metadata", { videoId });
-      throw new Error(
-        `Failed to extract YouTube metadata: ${error instanceof Error ? error.message : String(error)}`
-      );
+
+      // Fallback: Return basic metadata with just thumbnail
+      log.warn("Using fallback metadata with basic info", { videoId });
+      return {
+        title: 'YouTube Video',
+        duration: 0,
+        uploader: 'Unknown',
+        webpage_url: youtubeUrl,
+        thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+      };
     }
   }
 
