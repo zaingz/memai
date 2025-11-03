@@ -1,0 +1,296 @@
+/*
+ * Aurora Glass Design System - Button Styles
+ * Premium button components with glass morphism effects
+ */
+
+/* ===== Base Button Styles ===== */
+.btn {
+  /* Layout */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+
+  /* Spacing */
+  padding: var(--padding-button-y) var(--padding-button-x);
+  min-height: var(--touch-target-min);
+
+  /* Typography */
+  font-family: var(--font-body);
+  font-size: var(--text-button-size);
+  font-weight: var(--text-button-weight);
+  line-height: var(--text-button-line);
+  letter-spacing: var(--text-button-spacing);
+  text-decoration: none;
+  white-space: nowrap;
+
+  /* Appearance */
+  border: 1px solid transparent;
+  border-radius: var(--radius-button);
+  cursor: pointer;
+  user-select: none;
+
+  /* Transitions */
+  transition: var(--transition-button);
+
+  /* Focus */
+  position: relative;
+  isolation: isolate;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  filter: grayscale(50%);
+}
+
+/* ===== Button Variants ===== */
+
+/* Primary Button - Gradient */
+.btn-primary {
+  background: var(--gradient-primary);
+  color: var(--text-on-primary);
+  border-color: transparent;
+  box-shadow: var(--shadow-md), var(--shadow-primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg), var(--glow-primary);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm), var(--shadow-primary);
+}
+
+/* Secondary Button - Glass */
+.btn-secondary {
+  background: var(--glass-medium);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  color: var(--text-primary);
+  border-color: var(--border-color-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--glass-heavy);
+  border-color: var(--border-color-medium);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Ghost Button - Minimal */
+.btn-ghost {
+  background: transparent;
+  color: var(--text-primary);
+  border-color: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--glass-light);
+  border-color: var(--border-color-subtle);
+  transform: translateY(-1px);
+}
+
+.btn-ghost:active:not(:disabled) {
+  transform: translateY(0);
+  background: var(--glass-medium);
+}
+
+/* Outline Button */
+.btn-outline {
+  background: transparent;
+  color: var(--color-primary-400);
+  border-color: var(--color-primary-400);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--color-primary-500);
+  color: var(--text-on-primary);
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), var(--shadow-primary);
+}
+
+.btn-outline:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Success Button */
+.btn-success {
+  background: linear-gradient(135deg, var(--color-success-main), var(--color-success-dark));
+  color: var(--text-on-primary);
+  border-color: transparent;
+  box-shadow: var(--shadow-md), var(--shadow-success);
+}
+
+.btn-success:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg), var(--glow-success);
+}
+
+/* Error/Danger Button */
+.btn-error {
+  background: linear-gradient(135deg, var(--color-error-main), var(--color-error-dark));
+  color: var(--text-on-primary);
+  border-color: transparent;
+  box-shadow: var(--shadow-md), var(--shadow-error);
+}
+
+.btn-error:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg), var(--glow-error);
+}
+
+/* ===== Button Sizes ===== */
+.btn-sm {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  min-height: 32px;
+  border-radius: var(--radius-md);
+}
+
+.btn-md {
+  /* Default size */
+}
+
+.btn-lg {
+  padding: var(--space-4) var(--space-8);
+  font-size: var(--font-size-md);
+  min-height: 56px;
+  border-radius: var(--radius-lg);
+}
+
+/* ===== Button States ===== */
+.btn-loading {
+  color: transparent !important;
+  pointer-events: none;
+  position: relative;
+}
+
+.btn-loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin: -8px 0 0 -8px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* ===== Icon Button ===== */
+.btn-icon {
+  padding: var(--space-3);
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}
+
+.btn-icon.btn-sm {
+  padding: var(--space-2);
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.btn-icon.btn-lg {
+  padding: var(--space-4);
+  min-width: 56px;
+  min-height: 56px;
+}
+
+/* ===== Floating Action Button ===== */
+.btn-fab {
+  position: fixed;
+  bottom: var(--space-6);
+  right: var(--space-6);
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border-radius: var(--radius-full);
+  background: var(--gradient-primary);
+  color: var(--text-on-primary);
+  box-shadow: var(--shadow-lg), var(--shadow-primary);
+  z-index: var(--z-index-fixed);
+}
+
+.btn-fab:hover:not(:disabled) {
+  transform: scale(1.1);
+  box-shadow: var(--shadow-xl), var(--glow-primary);
+}
+
+.btn-fab:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+/* ===== Button Group ===== */
+.btn-group {
+  display: inline-flex;
+  gap: 0;
+  border-radius: var(--radius-button);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+
+.btn-group .btn {
+  border-radius: 0;
+  margin: 0;
+  flex: 1;
+}
+
+.btn-group .btn:not(:last-child) {
+  border-right: 1px solid var(--border-color-light);
+}
+
+.btn-group .btn:first-child {
+  border-radius: var(--radius-button) 0 0 var(--radius-button);
+}
+
+.btn-group .btn:last-child {
+  border-radius: 0 var(--radius-button) var(--radius-button) 0;
+}
+
+/* ===== Toggle Button ===== */
+.btn-toggle {
+  background: var(--glass-medium);
+  color: var(--text-secondary);
+  border-color: var(--border-color-light);
+}
+
+.btn-toggle.active {
+  background: var(--gradient-primary);
+  color: var(--text-on-primary);
+  border-color: transparent;
+  box-shadow: var(--shadow-md), var(--shadow-primary);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .btn-fab {
+    bottom: calc(var(--layout-mobile-nav-height) + var(--space-4));
+    right: var(--space-4);
+  }
+}
+
+/* ===== Animation Keyframes ===== */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

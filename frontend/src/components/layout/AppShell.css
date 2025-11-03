@@ -1,0 +1,133 @@
+/*
+ * AppShell - Main Layout Container Styles
+ */
+
+.app-shell {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  position: relative;
+  background: var(--gradient-dark);
+}
+
+/* Main content area */
+.app-shell__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: margin-left var(--duration-normal) var(--ease-in-out);
+  position: relative;
+  width: 100%;
+}
+
+.app-shell__main--sidebar-open {
+  margin-left: var(--layout-sidebar-width);
+}
+
+.app-shell__main--sidebar-collapsed {
+  margin-left: var(--layout-sidebar-collapsed);
+}
+
+/* Content area */
+.app-shell__content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  padding-top: var(--layout-header-height);
+}
+
+.app-shell__content-inner {
+  padding: var(--space-6);
+  max-width: 100%;
+  margin: 0 auto;
+  min-height: calc(100vh - var(--layout-header-height));
+}
+
+/* Mobile drawer */
+.app-shell__mobile-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-index-modal);
+  pointer-events: none;
+  display: flex;
+}
+
+.app-shell__mobile-drawer--open {
+  pointer-events: auto;
+}
+
+.app-shell__mobile-drawer-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-backdrop);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.app-shell__mobile-drawer--open .app-shell__mobile-drawer-backdrop {
+  opacity: 1;
+}
+
+.app-shell__mobile-drawer-content {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 280px;
+  transform: translateX(-100%);
+  transition: transform var(--duration-normal) var(--ease-out);
+  z-index: var(--z-index-modal);
+}
+
+.app-shell__mobile-drawer--open .app-shell__mobile-drawer-content {
+  transform: translateX(0);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .app-shell__main {
+    margin-left: 0 !important;
+  }
+
+  .app-shell__content {
+    padding-bottom: var(--layout-mobile-nav-height);
+  }
+
+  .app-shell__content-inner {
+    padding: var(--space-4);
+  }
+}
+
+@media (min-width: 1536px) {
+  .app-shell__content-inner {
+    max-width: var(--container-2xl);
+  }
+}
+
+/* Scrollbar styling for content area */
+.app-shell__content::-webkit-scrollbar {
+  width: 12px;
+}
+
+.app-shell__content::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.app-shell__content::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-600);
+  border-radius: var(--radius-full);
+  border: 2px solid var(--bg-secondary);
+}
+
+.app-shell__content::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neutral-500);
+}

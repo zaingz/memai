@@ -1,0 +1,286 @@
+/*
+ * Sidebar - Navigation Component Styles
+ */
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--layout-sidebar-width);
+  background: var(--glass-darker);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border-right: 1px solid var(--border-color-subtle);
+  display: flex;
+  flex-direction: column;
+  z-index: var(--z-index-sticky);
+  transition: width var(--duration-normal) var(--ease-in-out);
+  overflow: hidden;
+}
+
+.sidebar--collapsed {
+  width: var(--layout-sidebar-collapsed);
+}
+
+.sidebar--mobile {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-right: none;
+}
+
+/* Header */
+.sidebar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-color-subtle);
+  min-height: var(--layout-header-height);
+}
+
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-h4-size);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
+.sidebar__brand-icon {
+  font-size: 1.5rem;
+}
+
+.sidebar__brand-text {
+  background: var(--gradient-text);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.sidebar__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--glass-light);
+  border: 1px solid var(--border-color-subtle);
+  color: var(--text-secondary);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.sidebar__toggle:hover {
+  background: var(--glass-medium);
+  border-color: var(--border-color-light);
+  transform: scale(1.1);
+}
+
+/* Action Button */
+.sidebar__action {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-color-subtle);
+}
+
+.btn-block {
+  width: 100%;
+  justify-content: center;
+}
+
+.sidebar--collapsed .sidebar__action .btn {
+  padding: var(--space-3);
+  min-width: auto;
+}
+
+.sidebar--collapsed .btn-block span:last-child {
+  display: none;
+}
+
+/* Navigation */
+.sidebar__nav {
+  flex: 0 0 auto;
+  padding: var(--space-2) 0;
+}
+
+.sidebar__nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar__nav-item {
+  margin: var(--space-1) 0;
+}
+
+.sidebar__nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-body-base-size);
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  position: relative;
+}
+
+.sidebar__nav-link:hover {
+  background: var(--glass-light);
+  color: var(--text-primary);
+  transform: translateX(4px);
+}
+
+.sidebar__nav-link--active {
+  background: linear-gradient(90deg,
+    rgba(59, 130, 246, 0.15) 0%,
+    transparent 100%);
+  border-left-color: var(--color-primary-500);
+  color: var(--color-primary-400);
+}
+
+.sidebar__nav-icon {
+  flex-shrink: 0;
+  font-size: 1.25rem;
+  width: 24px;
+  text-align: center;
+}
+
+.sidebar__nav-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar__nav-badge {
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-primary-500);
+  color: white;
+  border-radius: var(--radius-full);
+  font-size: var(--text-caption-size);
+  font-weight: var(--font-weight-bold);
+  min-width: 20px;
+  text-align: center;
+}
+
+/* Sections */
+.sidebar__section {
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--border-color-subtle);
+}
+
+.sidebar__section-title {
+  padding: 0 var(--space-4);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-overline-size);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--text-overline-spacing);
+  text-transform: var(--text-overline-transform);
+  color: var(--text-tertiary);
+}
+
+/* Footer */
+.sidebar__footer {
+  margin-top: auto;
+  padding: var(--space-4);
+  border-top: 1px solid var(--border-color-subtle);
+}
+
+.sidebar__user-menu {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  background: var(--glass-light);
+  border: 1px solid var(--border-color-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.sidebar__user-menu:hover {
+  background: var(--glass-medium);
+  border-color: var(--border-color-light);
+}
+
+.sidebar__user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--gradient-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+}
+
+.sidebar__user-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  overflow: hidden;
+}
+
+.sidebar__user-name {
+  font-size: var(--text-body-base-size);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar__user-email {
+  font-size: var(--text-caption-size);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Collapsed State */
+.sidebar--collapsed .sidebar__nav-link {
+  justify-content: center;
+  padding: var(--space-3);
+}
+
+.sidebar--collapsed .sidebar__nav-icon {
+  margin: 0;
+}
+
+.sidebar--collapsed .sidebar__user-menu {
+  justify-content: center;
+  padding: var(--space-2);
+}
+
+.sidebar--collapsed .sidebar__section {
+  display: none;
+}
+
+/* Scrollbar */
+.sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-700);
+  border-radius: var(--radius-full);
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neutral-600);
+}
