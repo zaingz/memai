@@ -4,6 +4,50 @@
 
 ---
 
+## 🚨 CRITICAL: DEPLOYMENT - READ THIS FIRST
+
+**DO NOT MOVE FILES BETWEEN DIRECTORIES FOR DEPLOYMENT**
+
+This repository uses a **monorepo structure** with **git subtree deployment**.
+
+### Repository Structure (NEVER CHANGE THIS)
+```
+/
+├── backend/           # Encore.ts backend (deployed separately)
+│   ├── encore.app     # Encore config
+│   ├── bookmarks/     # Services
+│   └── users/
+├── frontend/          # React frontend (deployed separately)
+│   └── src/
+├── Makefile           # Deployment automation (USE THIS)
+└── CLAUDE.md          # This file
+```
+
+### How Deployment Works
+1. **Backend**: `make deploy-backend` uses **git subtree** to extract ONLY `backend/` and push to Encore
+   - Git subtree splits `backend/` into temp branch
+   - Pushes with `backend/encore.app` → `encore.app` at root
+   - Encore sees `encore.app` at expected location
+   - **NEVER move backend files to root!**
+
+2. **Frontend**: `make deploy-frontend` deploys to Vercel separately
+
+### Common Mistakes to AVOID
+❌ **NEVER** move `backend/` contents to repository root
+❌ **NEVER** remove `backend/` or `frontend/` directories
+❌ **NEVER** try to "fix" Encore deployment by restructuring
+❌ **NEVER** modify git subtree deployment in Makefile
+
+### If Deployment Fails
+1. ✅ Check Makefile still has git subtree deployment
+2. ✅ Verify `backend/encore.app` exists
+3. ✅ Run `make deploy-backend` (don't modify structure!)
+4. ✅ Check Encore Cloud dashboard for actual error
+
+**The monorepo structure is intentional. Git subtree handles deployment. DO NOT restructure.**
+
+---
+
 ## 🎯 How Claude Code Should Approach This Codebase
 
 **You have unique strengths:**

@@ -25,12 +25,20 @@ help:
 	@echo ""
 
 # Deploy backend to Encore Cloud (using git subtree for monorepo)
+# ⚠️  CRITICAL: DO NOT MODIFY THIS DEPLOYMENT METHOD
+# This uses git subtree to extract ONLY backend/ directory and push to Encore.
+# Git subtree makes backend/encore.app appear as encore.app at root for Encore.
+# The monorepo structure (backend/ + frontend/) is intentional - DO NOT move files!
 deploy-backend:
-	@echo "Deploying backend to Encore Cloud..."
+	@echo "Deploying backend to Encore Cloud using git subtree..."
+	@echo "Splitting backend/ directory into temporary branch..."
 	@git subtree split --prefix=backend -b backend-deploy > /dev/null
+	@echo "Pushing backend-only branch to Encore Cloud..."
 	@git push encore backend-deploy:main --force
+	@echo "Cleaning up temporary branch..."
 	@git branch -D backend-deploy > /dev/null
 	@echo "✅ Backend deployed successfully!"
+	@echo "📊 View deployment: https://app.encore.cloud/memai-backend-cno2/deploys"
 
 # Deploy frontend to Vercel (production)
 deploy-frontend:
