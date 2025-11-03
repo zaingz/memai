@@ -59,7 +59,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.25rem 1.5rem;
+  padding: 1.25rem 4rem 1.25rem 1.5rem; /* Extra right padding for close button */
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
@@ -541,7 +541,7 @@
     flex-direction: column;
     gap: 0.75rem;
     align-items: stretch;
-    padding: 1rem;
+    padding: 1rem 3.5rem 1rem 1rem; /* Extra right padding for close button on mobile */
   }
 
   .daily-digest-header h2 {
@@ -579,7 +579,7 @@
 
 @media (max-width: 480px) {
   .daily-digest-header {
-    padding: 0.875rem;
+    padding: 0.875rem 3rem 0.875rem 0.875rem; /* Extra right padding for close button */
   }
 
   .bookmark-carousel-card {
