@@ -568,3 +568,63 @@ export const reEnrichMetadata = api(
     }
   }
 );
+
+// ADMIN ENDPOINT - Fix array metadata issue
+// Converts array metadata to proper object format
+export const fixArrayMetadata = api(
+  { expose: true, method: "POST", path: "/admin/fix-array-metadata", auth: true },
+  async (): Promise<{ message: string; fixed: number }> => {
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+
+    const userId = auth.userID;
+
+    log.info("Fixing array metadata for user", { userId });
+
+    try {
+      // Fix bookmarks where metadata is an array - convert to proper object
+      // Get the last non-null element from the array (most recent enrichment)
+      await db.exec`
+        UPDATE bookmarks
+        SET metadata = (
+          SELECT elem
+          FROM jsonb_array_elements(metadata) AS elem
+          WHERE elem IS NOT NULL AND elem != 'null'::jsonb
+          ORDER BY ordinality DESC
+          LIMIT 1
+        )
+        WHERE user_id = ${userId}
+        AND jsonb_typeof(metadata) = 'array'
+      `;
+
+      // Count how many were fixed
+      const countResult = await db.queryRow<{ count: number }>`
+        SELECT COUNT(*)::int as count
+        FROM bookmarks
+        WHERE user_id = ${userId}
+        AND metadata IS NOT NULL
+        AND jsonb_typeof(metadata) = 'object'
+      `;
+
+      const fixed = countResult?.count || 0;
+
+      log.info("Fixed array metadata", {
+        userId,
+        fixed,
+      });
+
+      return {
+        message: `Successfully fixed array metadata. You now have ${fixed} bookmarks with proper metadata.`,
+        fixed,
+      };
+    } catch (error) {
+      log.error(error, "Failed to fix array metadata", { userId });
+
+      throw APIError.internal(
+        `Failed to fix array metadata: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+);

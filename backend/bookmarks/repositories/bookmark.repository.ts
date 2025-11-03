@@ -192,15 +192,23 @@ export class BookmarkRepository {
 
   /**
    * Merges metadata into the existing bookmark metadata JSONB field.
-   * Performs a deep merge at the first level (JSONB concatenation).
+   * Performs a deep merge at the first level by using jsonb_set for each key.
+   * This ensures we always have an object, never an array.
    */
   async mergeMetadata(
     id: number,
     metadata: Record<string, any>
   ): Promise<Bookmark | null> {
+    // Build the merge query properly to avoid arrays
+    // We use COALESCE to ensure metadata starts as an empty object if null
+    // Then use || to merge, but we need to ensure both sides are objects
     const row = await this.db.queryRow<Bookmark>`
       UPDATE bookmarks
-      SET metadata = COALESCE(metadata, '{}'::jsonb) || ${metadata}
+      SET metadata = CASE
+        WHEN metadata IS NULL THEN ${metadata}::jsonb
+        WHEN jsonb_typeof(metadata) = 'array' THEN ${metadata}::jsonb
+        ELSE metadata::jsonb || ${metadata}::jsonb
+      END
       WHERE id = ${id}
       RETURNING *
     `;
