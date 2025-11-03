@@ -12,7 +12,7 @@
   backdrop-filter: var(--backdrop-blur);
   -webkit-backdrop-filter: var(--backdrop-blur);
   border-top: 1px solid var(--border-color-subtle);
-  z-index: var(--z-index-sticky);
+  z-index: calc(var(--z-index-sticky) + 5);
   padding-bottom: env(safe-area-inset-bottom);
   box-shadow: 0 -4px 24px -8px rgba(0, 0, 0, 0.3);
 }

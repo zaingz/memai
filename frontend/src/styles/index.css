@@ -16,3 +16,5 @@
 /* ===== Component Styles ===== */
 @import './components/buttons.css';
 @import './components/cards.css';
+@import './components/modals.css';
+@import './components/layout-fixes.css';

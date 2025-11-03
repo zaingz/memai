@@ -193,24 +193,26 @@ export function BookmarksApp() {
           <p>Try a different search or add a new bookmark from the extension.</p>
         </div>
       ) : (
-        <div className="main-layout">
-          <section className="card-grid" aria-label="Bookmark results">
-            {filteredBookmarks.map(bookmark => (
-              <BookmarkCard
-                key={bookmark.id}
-                bookmark={bookmark}
-                isActive={bookmark.id === selectedId}
-                onSelect={(bookmark) => setSelectedId(bookmark.id)}
-              />
-            ))}
-          </section>
+        <>
+          <div className="main-layout">
+            <section className="card-grid" aria-label="Bookmark results">
+              {filteredBookmarks.map(bookmark => (
+                <BookmarkCard
+                  key={bookmark.id}
+                  bookmark={bookmark}
+                  isActive={bookmark.id === selectedId}
+                  onSelect={(bookmark) => setSelectedId(bookmark.id)}
+                />
+              ))}
+            </section>
+          </div>
           <BookmarkDetails
             bookmark={selectedBookmark}
             details={details}
             onClose={() => setSelectedId(null)}
             isOpen={isDetailsOpen}
           />
-        </div>
+        </>
       )}
 
       {isDetailsOpen && isMobile && (
