@@ -8,20 +8,8 @@ interface CreateBookmarkModalProps {
   onSuccess: () => void;
 }
 
-const SOURCE_OPTIONS = [
-  { value: "web", label: "Web" },
-  { value: "youtube", label: "YouTube" },
-  { value: "podcast", label: "Podcast" },
-  { value: "reddit", label: "Reddit" },
-  { value: "twitter", label: "Twitter" },
-  { value: "linkedin", label: "LinkedIn" },
-  { value: "blog", label: "Blog/Article" },
-  { value: "other", label: "Other" },
-];
-
 export function CreateBookmarkModal({ isOpen, onClose, onSuccess }: CreateBookmarkModalProps) {
   const [url, setUrl] = useState("");
-  const [source, setSource] = useState("web");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,13 +35,12 @@ export function CreateBookmarkModal({ isOpen, onClose, onSuccess }: CreateBookma
     try {
       await createBookmark({
         url: url.trim(),
-        source: source as any,
+        // Don't send source - let backend auto-classify
         client_time: new Date().toISOString(),
       });
 
       // Success!
       setUrl("");
-      setSource("web");
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -65,7 +52,6 @@ export function CreateBookmarkModal({ isOpen, onClose, onSuccess }: CreateBookma
 
   const handleClose = () => {
     setUrl("");
-    setSource("web");
     setError(null);
     onClose();
   };
@@ -93,7 +79,7 @@ export function CreateBookmarkModal({ isOpen, onClose, onSuccess }: CreateBookma
 
         <div className="create-bookmark-modal__content">
           <h2>Create Bookmark</h2>
-          <p className="modal-description">Save a new bookmark to your collection</p>
+          <p className="modal-description">Save a new bookmark - source will be automatically detected</p>
 
           <form onSubmit={handleSubmit}>
             <div className="form-group">
@@ -107,22 +93,6 @@ export function CreateBookmarkModal({ isOpen, onClose, onSuccess }: CreateBookma
                 autoFocus
                 disabled={isSubmitting}
               />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="bookmark-source">Source Type</label>
-              <select
-                id="bookmark-source"
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-                disabled={isSubmitting}
-              >
-                {SOURCE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
             </div>
 
             {error && <div className="error-message">{error}</div>}
