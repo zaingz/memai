@@ -137,13 +137,25 @@ export class LinkPreviewService {
     return null;
   }
 
+  /**
+   * Gets the highest quality YouTube thumbnail available.
+   * YouTube provides different quality levels:
+   * - maxresdefault.jpg (1920x1080) - Best quality, but not always available
+   * - sddefault.jpg (640x480) - Standard definition
+   * - hqdefault.jpg (480x360) - High quality, always available
+   *
+   * We use maxresdefault as it provides the best visual experience for thumbnails.
+   */
   private getYouTubeThumbnail(url: string): string | null {
     const videoId = extractYouTubeVideoId(url);
     if (!videoId) {
       return null;
     }
 
-    return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+    // Use maxresdefault for best quality
+    // Note: maxresdefault may not exist for all videos, but modern videos typically have it
+    // If it doesn't exist, browsers will fail to load and we can fallback in the UI
+    return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
   }
 
   private buildFaviconUrl(url: string): string {

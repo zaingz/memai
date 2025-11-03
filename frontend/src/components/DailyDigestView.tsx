@@ -115,6 +115,27 @@ export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
     });
   };
 
+  /**
+   * Handles YouTube thumbnail loading errors by falling back to lower quality.
+   * maxresdefault.jpg (1920x1080) may not exist for all videos,
+   * so we fallback to hqdefault.jpg (480x360) which is always available.
+   */
+  const handleThumbnailError = (event: React.SyntheticEvent<HTMLImageElement>, bookmark: Bookmark) => {
+    const img = event.currentTarget;
+    const currentSrc = img.src;
+
+    // If currently trying maxresdefault, fallback to hqdefault
+    if (currentSrc.includes('maxresdefault.jpg') && bookmark.source === 'youtube') {
+      const fallbackSrc = currentSrc.replace('maxresdefault.jpg', 'hqdefault.jpg');
+      console.log(`Falling back YouTube thumbnail: ${currentSrc} → ${fallbackSrc}`);
+      img.src = fallbackSrc;
+    } else {
+      // If hqdefault also fails, or it's not a YouTube video, hide the image
+      console.warn(`Thumbnail failed to load for bookmark ${bookmark.id}:`, currentSrc);
+      img.style.display = 'none';
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -256,7 +277,12 @@ export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
                             <div key={bookmark.id} className="bookmark-carousel-card">
                               {preview?.thumbnailUrl ? (
                                 <div className="bookmark-carousel-card-thumbnail">
-                                  <img src={preview.thumbnailUrl} alt={preview.title || 'Bookmark'} />
+                                  <img
+                                    src={preview.thumbnailUrl}
+                                    alt={preview.title || 'Bookmark'}
+                                    onError={(e) => handleThumbnailError(e, bookmark)}
+                                    loading="lazy"
+                                  />
                                 </div>
                               ) : (
                                 <div className="bookmark-carousel-card-thumbnail-fallback">

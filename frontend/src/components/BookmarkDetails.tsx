@@ -23,6 +23,24 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
     return label.charAt(0).toUpperCase() + label.slice(1);
   };
 
+  /**
+   * Handles YouTube thumbnail loading errors by falling back to lower quality.
+   */
+  const handleThumbnailError = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = event.currentTarget;
+    const currentSrc = img.src;
+
+    if (currentSrc.includes('maxresdefault.jpg') && bookmark?.source === 'youtube') {
+      const fallbackSrc = currentSrc.replace('maxresdefault.jpg', 'hqdefault.jpg');
+      img.src = fallbackSrc;
+    } else {
+      // Hide the thumbnail if it fails to load
+      if (img.parentElement) {
+        img.parentElement.style.display = 'none';
+      }
+    }
+  };
+
   if (!isOpen || !bookmark) return null;
 
   return (
@@ -46,7 +64,12 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
         {/* Thumbnail/Hero Section */}
         {preview?.thumbnailUrl && (
           <div className="details-hero">
-            <img src={preview.thumbnailUrl} alt="Bookmark preview" loading="lazy" />
+            <img
+              src={preview.thumbnailUrl}
+              alt="Bookmark preview"
+              loading="lazy"
+              onError={handleThumbnailError}
+            />
           </div>
         )}
 

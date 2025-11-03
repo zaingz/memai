@@ -36,6 +36,39 @@ export function BookmarkCard({ bookmark, isActive, onSelect }: BookmarkCardProps
   const thumbnail = preview?.thumbnailUrl;
   const favicon = preview?.favicon;
 
+  /**
+   * Handles YouTube thumbnail loading errors by falling back to lower quality.
+   */
+  const handleThumbnailError = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = event.currentTarget;
+    const currentSrc = img.src;
+
+    if (currentSrc.includes('maxresdefault.jpg') && bookmark.source === 'youtube') {
+      const fallbackSrc = currentSrc.replace('maxresdefault.jpg', 'hqdefault.jpg');
+      img.src = fallbackSrc;
+    } else {
+      // Hide the image and show fallback
+      img.style.display = 'none';
+      if (img.parentElement) {
+        img.parentElement.innerHTML = `
+          <div class="bookmark-card-thumbnail-fallback" style="
+            background: ${preview?.accentColor || 'rgba(15, 23, 42, 0.7)'};
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 0.5rem;
+            color: rgba(148, 163, 184, 0.8);
+          ">
+            ${favicon ? `<img src="${favicon}" alt="Site icon" style="width: 32px; height: 32px;" loading="lazy" />` : '<span role="img" aria-label="link" style="font-size: 2rem;">🔖</span>'}
+            <span style="font-size: 0.875rem; font-weight: 500;">${hostname}</span>
+          </div>
+        `;
+      }
+    }
+  };
+
   return (
     <article
       className={clsx("bookmark-card card card-interactive", { "bookmark-card--active": isActive })}
@@ -51,7 +84,12 @@ export function BookmarkCard({ bookmark, isActive, onSelect }: BookmarkCardProps
     >
       <div className="bookmark-card-thumbnail">
         {thumbnail ? (
-          <img src={thumbnail} alt={title ?? "Bookmark preview"} loading="lazy" />
+          <img
+            src={thumbnail}
+            alt={title ?? "Bookmark preview"}
+            loading="lazy"
+            onError={handleThumbnailError}
+          />
         ) : (
           <div
             className="bookmark-card-thumbnail-fallback"
