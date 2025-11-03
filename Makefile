@@ -24,12 +24,10 @@ help:
 	@echo "  make db-shell          - Open database shell for bookmarks service"
 	@echo ""
 
-# Deploy backend to Encore Cloud (using git subtree for monorepo)
+# Deploy backend to Encore Cloud (backend is at repository root)
 deploy-backend:
 	@echo "Deploying backend to Encore Cloud..."
-	@git subtree split --prefix=backend -b backend-deploy > /dev/null
-	@git push encore backend-deploy:main --force
-	@git branch -D backend-deploy > /dev/null
+	@git push encore main
 	@echo "✅ Backend deployed successfully!"
 
 # Deploy frontend to Vercel (production)
@@ -46,37 +44,37 @@ deploy-all:
 # Clean build artifacts and temporary files
 clean:
 	@echo "Cleaning build artifacts..."
-	cd backend && rm -rf .encore/ encore.gen/ node_modules/ tsconfig.tsbuildinfo
+	rm -rf .encore/ encore.gen/ node_modules/ tsconfig.tsbuildinfo
 	cd frontend && rm -rf node_modules/ dist/
 	@echo "Clean complete!"
 
 # Install dependencies
 install:
 	@echo "Installing dependencies..."
-	cd backend && npm install
+	npm install
 	cd frontend && npm install
 
 # Run backend locally
 dev-backend:
 	@echo "Starting Encore backend locally..."
-	cd backend && encore run
+	encore run
 
 # Run tests
 test:
 	@echo "Running tests..."
-	cd backend && encore test
+	encore test
 
 # Check TypeScript types
 typecheck:
 	@echo "Checking TypeScript types..."
-	cd backend && npx tsc --noEmit
+	npx tsc --noEmit
 
 # View staging logs
 logs:
 	@echo "Viewing staging logs..."
-	cd backend && encore logs --env=staging
+	encore logs --env=staging
 
 # Open database shell
 db-shell:
 	@echo "Opening database shell for bookmarks service..."
-	cd backend && encore db shell bookmarks
+	encore db shell bookmarks
