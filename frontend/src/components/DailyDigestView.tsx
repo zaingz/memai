@@ -76,7 +76,9 @@ export function DailyDigestView({ isOpen, onClose }: DailyDigestViewProps) {
     setIsGenerating(true);
     setError(null);
     try {
-      const response = await generateDailyDigest();
+      // Generate digest for TODAY (not yesterday)
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      const response = await generateDailyDigest(today);
       setSelectedDigest(response.digest);
       await loadDigests();
     } catch (err: any) {
