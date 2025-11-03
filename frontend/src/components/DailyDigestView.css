@@ -1,15 +1,15 @@
-/* Daily Digest Modal */
+/* Daily Digest Modal - Pixel Perfect & Elegant */
 .daily-digest-modal {
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   width: 95%;
-  max-width: 1200px;
-  max-height: 90vh;
+  max-width: 1100px;
+  max-height: 85vh;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 16px;
+  border-radius: 12px;
   z-index: 1001;
   overflow: hidden;
   display: flex;
@@ -18,61 +18,72 @@
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
-/* Header */
+/* Header - Compact & Elegant */
 .daily-digest-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 2rem;
+  padding: 1.25rem 1.5rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .daily-digest-header h2 {
   margin: 0;
-  font-size: 1.75rem;
+  font-size: 1.125rem;
   font-weight: 600;
   background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-/* Main Layout */
+.daily-digest-header .btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  gap: 0.375rem;
+}
+
+.daily-digest-header .btn svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* Main Layout - Optimized Grid */
 .daily-digest-layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 240px 1fr;
   gap: 0;
   flex: 1;
   overflow: hidden;
 }
 
-/* Digest List (Sidebar) */
+/* Digest List (Sidebar) - Compact */
 .digest-list {
   background: rgba(15, 23, 42, 0.5);
   border-right: 1px solid rgba(148, 163, 184, 0.1);
-  padding: 1.5rem;
+  padding: 1rem;
   overflow-y: auto;
 }
 
 .digest-list h3 {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.05em;
   color: #64748b;
-  margin: 0 0 1rem;
+  margin: 0 0 0.75rem;
 }
 
 .digest-list-items {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .digest-list-item {
-  padding: 1rem;
+  padding: 0.75rem;
   background: rgba(30, 41, 59, 0.3);
   border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 10px;
+  border-radius: 8px;
   text-align: left;
   cursor: pointer;
   transition: all 0.2s;
@@ -90,58 +101,60 @@
 }
 
 .digest-list-item-date {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: #cbd5e1;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.375rem;
+  line-height: 1.3;
 }
 
 .digest-list-item-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 
 .digest-list-item-count {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: #94a3b8;
 }
 
-/* Digest Content Area */
+/* Digest Content Area - Refined */
 .digest-content {
-  padding: 2rem;
+  padding: 1.5rem;
   overflow-y: auto;
 }
 
 .digest-content-header {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .digest-content-header h2 {
-  font-size: 1.5rem;
+  font-size: 1.125rem;
   font-weight: 600;
   color: #f1f5f9;
-  margin: 0 0 0.75rem;
+  margin: 0 0 0.5rem;
+  line-height: 1.4;
 }
 
 .digest-content-meta {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .digest-bookmark-count {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: #94a3b8;
 }
 
-/* Status Badges */
+/* Status Badges - Refined */
 .digest-status-badge {
   display: inline-flex;
-  padding: 0.25rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.75rem;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: capitalize;
 }
@@ -166,39 +179,39 @@
   color: #fca5a5;
 }
 
-/* Bookmarks Carousel */
+/* Bookmarks Carousel - Compact & Elegant */
 .bookmarks-carousel {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .bookmarks-carousel h3 {
-  font-size: 1rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: #cbd5e1;
-  margin: 0 0 1rem;
+  margin: 0 0 0.75rem;
 }
 
 .bookmarks-carousel-scroll {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   overflow-x: auto;
-  padding-bottom: 1rem;
+  padding-bottom: 0.75rem;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
 }
 
 .bookmarks-carousel-scroll::-webkit-scrollbar {
-  height: 6px;
+  height: 4px;
 }
 
 .bookmarks-carousel-scroll::-webkit-scrollbar-track {
   background: rgba(30, 41, 59, 0.3);
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 .bookmarks-carousel-scroll::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.3);
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 .bookmarks-carousel-scroll::-webkit-scrollbar-thumb:hover {
@@ -206,11 +219,11 @@
 }
 
 .bookmark-carousel-card {
-  min-width: 200px;
-  max-width: 200px;
+  min-width: 160px;
+  max-width: 160px;
   background: rgba(30, 41, 59, 0.5);
   border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
   scroll-snap-align: start;
   transition: all 0.2s;
@@ -218,12 +231,12 @@
 
 .bookmark-carousel-card:hover {
   border-color: rgba(148, 163, 184, 0.3);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .bookmark-carousel-card-thumbnail {
   width: 100%;
-  height: 120px;
+  height: 90px;
   overflow: hidden;
   background: rgba(15, 23, 42, 0.5);
 }
@@ -236,7 +249,7 @@
 
 .bookmark-carousel-card-thumbnail-fallback {
   width: 100%;
-  height: 120px;
+  height: 90px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -245,45 +258,45 @@
 }
 
 .bookmark-carousel-card-thumbnail-fallback svg {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .bookmark-carousel-card-content {
-  padding: 0.75rem;
+  padding: 0.625rem;
 }
 
 .bookmark-carousel-card-title {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: #cbd5e1;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.375rem;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  line-height: 1.4;
+  line-height: 1.3;
 }
 
 .bookmark-carousel-card-source {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: #64748b;
   text-transform: uppercase;
   font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.025em;
 }
 
-/* Sources Breakdown */
+/* Sources Breakdown - Compact */
 .sources-breakdown {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .sources-breakdown h3 {
-  font-size: 1rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: #cbd5e1;
-  margin: 0 0 1rem;
+  margin: 0 0 0.75rem;
 }
 
 .sources-tags {
@@ -294,78 +307,116 @@
 
 .source-tag {
   display: inline-flex;
-  padding: 0.5rem 0.75rem;
+  padding: 0.375rem 0.625rem;
   background: rgba(59, 130, 246, 0.1);
   border: 1px solid rgba(59, 130, 246, 0.3);
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 0.75rem;
   color: #60a5fa;
   font-weight: 500;
 }
 
-/* Digest Summary */
+/* Digest Summary - Refined */
 .digest-summary {
   background: rgba(30, 41, 59, 0.3);
   border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 12px;
-  padding: 1.5rem;
+  border-radius: 10px;
+  padding: 1.25rem;
 }
 
 .digest-summary h3 {
-  font-size: 1rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: #cbd5e1;
-  margin: 0 0 1rem;
+  margin: 0 0 0.75rem;
 }
 
-/* Error and Empty States */
+.digest-summary .markdown-content {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.digest-summary .markdown-content h1 {
+  font-size: 1.25rem;
+  margin: 1rem 0 0.625rem;
+}
+
+.digest-summary .markdown-content h2 {
+  font-size: 1.125rem;
+  margin: 0.875rem 0 0.5rem;
+}
+
+.digest-summary .markdown-content h3 {
+  font-size: 1rem;
+  margin: 0.75rem 0 0.5rem;
+}
+
+.digest-summary .markdown-content p {
+  margin: 0 0 0.75rem;
+}
+
+.digest-summary .markdown-content ul,
+.digest-summary .markdown-content ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.digest-summary .markdown-content li {
+  margin-bottom: 0.375rem;
+}
+
+/* Error and Empty States - Compact */
 .digest-error {
-  padding: 1rem;
+  padding: 0.875rem;
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.2);
-  border-radius: 10px;
+  border-radius: 8px;
   color: #fca5a5;
+  font-size: 0.875rem;
 }
 
 .digest-processing {
   text-align: center;
   padding: 2rem;
   color: #94a3b8;
+  font-size: 0.875rem;
 }
 
 .digest-empty {
   text-align: center;
-  padding: 4rem 2rem;
+  padding: 3rem 1.5rem;
   color: #64748b;
+  font-size: 0.875rem;
 }
 
-/* Empty State */
+/* Empty State - Refined */
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 4rem 2rem;
+  padding: 3rem 1.5rem;
   text-align: center;
 }
 
 .empty-icon {
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   color: #475569;
-  margin-bottom: 1rem;
+  margin-bottom: 0.875rem;
 }
 
 .empty-state h3 {
-  font-size: 1.25rem;
+  font-size: 1.125rem;
   font-weight: 600;
   color: #cbd5e1;
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.375rem;
 }
 
 .empty-state p {
   color: #64748b;
   margin: 0;
+  font-size: 0.875rem;
 }
 
 /* Mobile Responsive */
@@ -377,7 +428,7 @@
   .digest-list {
     border-right: none;
     border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-    max-height: 200px;
+    max-height: 160px;
   }
 
   .digest-list-items {
@@ -387,7 +438,7 @@
   }
 
   .digest-list-item {
-    min-width: 200px;
+    min-width: 180px;
   }
 }
 
@@ -405,12 +456,13 @@
 
   .daily-digest-header {
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.75rem;
     align-items: stretch;
+    padding: 1rem;
   }
 
   .daily-digest-header h2 {
-    font-size: 1.5rem;
+    font-size: 1rem;
   }
 
   .digest-content {
@@ -418,22 +470,32 @@
   }
 
   .bookmarks-carousel-scroll {
-    gap: 0.75rem;
+    gap: 0.625rem;
   }
 
   .bookmark-carousel-card {
-    min-width: 180px;
-    max-width: 180px;
+    min-width: 140px;
+    max-width: 140px;
+  }
+
+  .bookmark-carousel-card-thumbnail,
+  .bookmark-carousel-card-thumbnail-fallback {
+    height: 80px;
   }
 }
 
 @media (max-width: 480px) {
   .daily-digest-header {
-    padding: 1rem;
+    padding: 0.875rem;
   }
 
   .bookmark-carousel-card {
-    min-width: 160px;
-    max-width: 160px;
+    min-width: 130px;
+    max-width: 130px;
+  }
+
+  .bookmark-carousel-card-thumbnail,
+  .bookmark-carousel-card-thumbnail-fallback {
+    height: 75px;
   }
 }
