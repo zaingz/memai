@@ -117,7 +117,12 @@ cd memai-backend
 cd backend
 npm install
 
-# Set up secrets (Encore will prompt for values)
+# Set up secrets (choose one method):
+# Method 1: Copy template and fill in values
+cp .secrets.local.cue.example .secrets.local.cue
+# Then edit .secrets.local.cue with your actual API keys
+
+# Method 2: Use Encore CLI (will prompt for values)
 encore secret set --type local DeepgramAPIKey
 encore secret set --type local OpenAIAPIKey
 encore secret set --type local FirecrawlAPIKey
@@ -245,7 +250,15 @@ encore db reset bookmarks
 
 ### Required Secrets (Backend)
 
-Set these using Encore CLI:
+**Method 1: Using Template File (Recommended for Development)**
+
+```bash
+cd backend
+cp .secrets.local.cue.example .secrets.local.cue
+# Edit .secrets.local.cue and fill in your actual API keys
+```
+
+**Method 2: Using Encore CLI**
 
 ```bash
 cd backend
@@ -254,6 +267,8 @@ encore secret set --type local OpenAIAPIKey
 encore secret set --type local FirecrawlAPIKey
 encore secret set --type local SupabaseJWTSecret
 ```
+
+**Note:** The `.secrets.local.cue` file is gitignored and should never be committed.
 
 For production:
 ```bash
