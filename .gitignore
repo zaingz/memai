@@ -5,8 +5,11 @@ backend/node_modules/
 backend/*.tsbuildinfo
 backend/.secrets.local.cue
 
-# Frontend - NOT tracked (Encore tries to compile it even with .encoreignore)
-frontend/
+# Frontend - Build artifacts and environment
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.production.local
 
 # ytdl-core temporary files
 *-player-script.js

@@ -1332,36 +1332,32 @@ encore logs --env=local     # View application logs
 
 **Remember**: Quality over speed. Understand first, code second. Use tools to verify everything.
 
-**⚠️ CRITICAL: Frontend and Encore Build Separation**
+**⚠️ CRITICAL: Frontend Repository Separation**
 
-The frontend directory **IS tracked** in git, but **excluded from Encore builds**.
+The frontend directory is **NOT tracked** in this repository's git.
 
-**How:**
-- Frontend source code is tracked in git (normal git workflow)
-- `backend/.encoreignore` contains `../frontend/` to exclude it from Encore compilation
-- This prevents Encore from trying to compile Vite/React TypeScript files
+**Why:**
+- Encore Cloud tries to compile ALL TypeScript files during backend builds
+- Frontend uses Vite with `@vitejs/plugin-react` which aren't backend dependencies  
+- Including frontend causes build failures: "unable to resolve module @vitejs/plugin-react"
 
-**Structure:**
+**Solution:**
+- Frontend is in `.gitignore` and excluded from git tracking
+- Frontend deploys separately to Vercel (independent workflow)
+- Backend and frontend are completely decoupled in version control
+
+**DO NOT** add frontend back to git! Keep separation:
 ```bash
-/
-├── frontend/              # Tracked in git, excluded by .encoreignore
-│   ├── src/              # Frontend source code
-│   └── vite.config.ts    # Vite config (not in backend deps)
-├── backend/              # Encore backend code
-│   ├── .encoreignore     # Contains: ../frontend/
-│   ├── encore.app
-│   ├── bookmarks/
-│   └── users/
+# Frontend remains local only
+frontend/  # ← in .gitignore
+
+# Backend only in git
+bookmarks/
+users/
+daily_digest/
 ```
 
-**Key Files:**
-- `backend/.encoreignore` - Tells Encore to ignore `../frontend/` during builds
-- `.gitignore` - Only excludes `frontend/node_modules/` and `frontend/dist/`
-- Frontend code IS committed and tracked in git
-
-**Deployment:**
-- Frontend: Deploys separately to Vercel
-- Backend: Deploys to Encore Cloud (ignores frontend via .encoreignore)
+If you need to track frontend changes, use a separate repository.
 
 ---
 
