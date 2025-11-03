@@ -123,10 +123,10 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
         </button>
 
         {/* Thumbnail/Hero Section */}
-        {preview?.thumbnailUrl && (
+        {(preview?.thumbnailUrl || youtubeMetadata?.thumbnail) && (
           <div className="details-hero">
             <img
-              src={preview.thumbnailUrl}
+              src={youtubeMetadata?.thumbnail || preview?.thumbnailUrl || ''}
               alt="Bookmark preview"
               loading="lazy"
               onError={handleThumbnailError}

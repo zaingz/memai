@@ -79,35 +79,6 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
         throw new Error("Invalid YouTube URL: could not extract video ID");
       }
 
-      // Extract YouTube metadata using yt-dlp (fast, no download required)
-      log.info("Extracting YouTube metadata", { bookmarkId, videoId });
-      let youtubeMetadata;
-      try {
-        youtubeMetadata = await youtubeDownloader.extractMetadata(videoId);
-
-        // Import BookmarkRepository to save metadata
-        const { BookmarkRepository } = await import("../repositories/bookmark.repository");
-        const bookmarkRepo = new BookmarkRepository(db);
-
-        // Save YouTube metadata immediately to bookmark
-        await bookmarkRepo.mergeMetadata(bookmarkId, {
-          youtubeMetadata,
-        });
-
-        log.info("YouTube metadata saved to bookmark", {
-          bookmarkId,
-          videoId,
-          duration: youtubeMetadata.duration,
-          uploader: youtubeMetadata.uploader,
-        });
-      } catch (metadataError) {
-        // Non-fatal: Continue even if metadata extraction fails
-        log.warn(metadataError, "Failed to extract YouTube metadata, continuing", {
-          bookmarkId,
-          videoId,
-        });
-      }
-
       log.info("Attempting Gemini transcription", { bookmarkId, videoId });
       const videoUrl = buildYouTubeUrl(videoId);
       const geminiResult = await geminiService.transcribeYouTubeVideo(videoUrl, videoId);
