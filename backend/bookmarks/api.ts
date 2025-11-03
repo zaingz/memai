@@ -489,3 +489,82 @@ export const generateYesterdaysDigest = api(
     }
   }
 );
+
+// ADMIN ENDPOINT - Re-enrich metadata for existing bookmarks
+// Use this to update thumbnails and other metadata for existing bookmarks
+export const reEnrichMetadata = api(
+  { expose: true, method: "POST", path: "/admin/re-enrich-metadata", auth: true },
+  async (req: { source?: BookmarkSource; limit?: number }): Promise<{ message: string; processed: number }> => {
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+
+    const userId = auth.userID;
+    const source = req.source;
+    const limit = req.limit || 100;
+
+    log.info("Re-enriching bookmark metadata", {
+      userId,
+      source,
+      limit,
+    });
+
+    try {
+      const bookmarksToEnrich: Array<{ id: number; url: string; title: string | null; source: string }> = [];
+
+      if (source) {
+        for await (const row of db.query<{ id: number; url: string; title: string | null; source: string }>`
+          SELECT id, url, title, source FROM bookmarks
+          WHERE user_id = ${userId} AND source = ${source}
+          ORDER BY created_at DESC LIMIT ${limit}
+        `) {
+          bookmarksToEnrich.push(row);
+        }
+      } else {
+        for await (const row of db.query<{ id: number; url: string; title: string | null; source: string }>`
+          SELECT id, url, title, source FROM bookmarks
+          WHERE user_id = ${userId}
+          ORDER BY created_at DESC LIMIT ${limit}
+        `) {
+          bookmarksToEnrich.push(row);
+        }
+      }
+
+      log.info("Found bookmarks to re-enrich", {
+        count: bookmarksToEnrich.length,
+        userId,
+      });
+
+      const { bookmarkSourceClassifiedTopic } = await import("./events/bookmark-source-classified.events");
+
+      for (const bookmark of bookmarksToEnrich) {
+        await bookmarkSourceClassifiedTopic.publish({
+          bookmarkId: bookmark.id,
+          url: bookmark.url,
+          source: bookmark.source as BookmarkSource,
+          title: bookmark.title || undefined,
+        });
+
+        log.info("Published metadata enrichment event", {
+          bookmarkId: bookmark.id,
+          source: bookmark.source,
+        });
+      }
+
+      return {
+        message: `Queued ${bookmarksToEnrich.length} bookmarks for metadata re-enrichment`,
+        processed: bookmarksToEnrich.length,
+      };
+    } catch (error) {
+      log.error(error, "Failed to re-enrich metadata", {
+        userId,
+        source,
+      });
+
+      throw APIError.internal(
+        `Failed to re-enrich metadata: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+);
