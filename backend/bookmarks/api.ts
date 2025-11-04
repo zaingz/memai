@@ -652,7 +652,7 @@ export const retryStuckTranscriptions = api(
           INNER JOIN transcriptions t ON b.id = t.bookmark_id
           WHERE b.id = ${req.bookmarkId}
           AND b.user_id = ${userId}
-          AND t.status = 'processing'
+          AND (t.status = 'processing' OR t.status = 'failed')
         `) {
           stuckBookmarks.push(row);
         }
@@ -663,8 +663,10 @@ export const retryStuckTranscriptions = api(
           FROM bookmarks b
           INNER JOIN transcriptions t ON b.id = t.bookmark_id
           WHERE b.user_id = ${userId}
-          AND t.status = 'processing'
-          AND t.processing_started_at < NOW() - INTERVAL '10 minutes'
+          AND (
+            (t.status = 'processing' AND t.processing_started_at < NOW() - INTERVAL '10 minutes')
+            OR t.status = 'failed'
+          )
         `) {
           stuckBookmarks.push(row);
         }
