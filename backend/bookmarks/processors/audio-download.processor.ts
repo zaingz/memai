@@ -7,30 +7,26 @@ import { audioDownloadedTopic } from "../events/audio-downloaded.events";
 import { audioTranscribedTopic } from "../events/audio-transcribed.events";
 import { BookmarkSourceClassifiedEvent } from "../types";
 import { PodcastDownloaderService } from "../services/podcast-downloader.service";
-import { YouTubeDownloaderService } from "../services/youtube-downloader.service";
 import { GeminiService } from "../services/gemini.service";
 import { TranscriptionRepository } from "../repositories/transcription.repository";
 import { extractYouTubeVideoId } from "../utils/youtube-url.util";
 import { buildYouTubeUrl } from "../utils/youtube-url.util";
-import { audioFilesBucket } from "../storage";
 import { BookmarkSource } from "../types/domain.types";
+import { audioFilesBucket } from "../storage";
 
 // Secrets
 const geminiApiKey = secret("GeminiApiKey");
 
 // Initialize services
 const podcastDownloader = new PodcastDownloaderService();
-const youtubeDownloader = new YouTubeDownloaderService();
 const geminiService = new GeminiService(geminiApiKey());
 const transcriptionRepo = new TranscriptionRepository(db);
 
 /**
  * Unified Audio Download Processor
  * Handles audio processing for different sources:
- * - YouTube: Uses Gemini API for direct transcription, falls back to Deepgram if Gemini fails
+ * - YouTube: Uses Gemini API for direct transcription (no fallback)
  * - Podcast: Downloads audio and processes with Deepgram
- *
- * State-of-the-art approach: Gemini (fast, 30s) → Deepgram (highest accuracy, 5.26% WER)
  *
  * Exported for testing purposes
  */
@@ -50,14 +46,35 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
       return;
     }
 
-    // Check for duplicate processing (idempotency)
+    // Check for duplicate processing (idempotency) with zombie detection
     const existing = await transcriptionRepo.findByBookmarkId(bookmarkId);
+
     if (existing && existing.status !== 'pending') {
-      log.warn("Transcription already processed, skipping duplicate event", {
-        bookmarkId,
-        currentStatus: existing.status,
-      });
-      return;
+      // Detect zombie processes: stuck in "processing" for more than 10 minutes
+      const ZOMBIE_THRESHOLD_MS = 600000; // 10 minutes
+      const isZombie = existing.status === 'processing' &&
+                       existing.processing_started_at &&
+                       (Date.now() - new Date(existing.processing_started_at).getTime()) > ZOMBIE_THRESHOLD_MS;
+
+      if (isZombie) {
+        const zombieAgeMs = existing.processing_started_at
+          ? Date.now() - new Date(existing.processing_started_at).getTime()
+          : 0;
+        log.warn("Detected zombie transcription process, resetting to retry", {
+          bookmarkId,
+          status: existing.status,
+          processingStartedAt: existing.processing_started_at,
+          zombieAge: Math.floor(zombieAgeMs / 1000 / 60) + " minutes",
+        });
+        // Reset to pending to allow retry
+        await transcriptionRepo.createPending(bookmarkId);
+      } else {
+        log.warn("Transcription already processed, skipping duplicate event", {
+          bookmarkId,
+          currentStatus: existing.status,
+        });
+        return;
+      }
     }
 
     // Create pending transcription record if not exists
@@ -84,39 +101,19 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
       const geminiResult = await geminiService.transcribeYouTubeVideo(videoUrl, videoId);
 
       if (geminiResult.error) {
-        // Gemini failed - fall back to Deepgram (state-of-the-art 5.26% WER)
-        log.warn("Gemini transcription failed, falling back to Deepgram", {
+        // Gemini failed - mark as failed (no fallback available)
+        log.error("Gemini transcription failed", {
           bookmarkId,
           videoId,
           geminiError: geminiResult.error,
         });
 
-        // Download audio and upload to bucket for Deepgram processing
-        audioBucketKey = await youtubeDownloader.downloadAndUpload(
-          videoId,
-          bookmarkId
+        await transcriptionRepo.markAsFailed(
+          bookmarkId,
+          `Transcription failed: ${geminiResult.error}`
         );
 
-        log.info("YouTube audio downloaded for Deepgram fallback", {
-          bookmarkId,
-          videoId,
-          audioBucketKey,
-        });
-
-        // Publish to audio-downloaded topic for Deepgram processing
-        await audioDownloadedTopic.publish({
-          bookmarkId,
-          audioBucketKey,
-          source,
-          metadata: { videoId, geminiFailure: geminiResult.error },
-        });
-
-        log.info("Published to Deepgram processing stage", {
-          bookmarkId,
-          videoId,
-        });
-
-        return; // Exit - Deepgram stage will handle transcription
+        return; // Exit - transcription failed
       }
 
       // SUCCESS: Gemini worked! Store transcript
@@ -206,11 +203,16 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
 /**
  * Subscription to bookmark-source-classified topic
  * Processes bookmarks that require audio download (YouTube, Podcast)
+ *
+ * Configuration:
+ * - ackDeadline: 300s (5 minutes) to handle large podcast downloads
+ *   (Default is 60s which times out for large files)
  */
 export const audioDownloadSubscription = new Subscription(
   bookmarkSourceClassifiedTopic,
   "audio-download-processor",
   {
     handler: handleAudioDownload,
+    ackDeadline: "300s", // 5 minutes for large podcast downloads (168MB can take 60-120s)
   }
 );

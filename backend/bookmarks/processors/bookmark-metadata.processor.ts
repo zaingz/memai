@@ -6,6 +6,7 @@ import { db } from "../db";
 import { LinkPreviewService } from "../services/link-preview.service";
 import { YouTubeDownloaderService } from "../services/youtube-downloader.service";
 import { extractYouTubeVideoId } from "../utils/youtube-url.util";
+import { extractPodcastMetadata } from "../utils/podcast-metadata.util";
 import { BookmarkSource } from "../types/domain.types";
 
 const bookmarkRepo = new BookmarkRepository(db);
@@ -65,7 +66,43 @@ export async function handleBookmarkMetadata(event: {
       }
     }
 
+    // Extract podcast-specific metadata if this is a podcast bookmark
+    // This uses iTunes API for Apple Podcasts and RSS parsing for others
+    // Bypasses OpenGraph scraping which Apple Podcasts blocks
+    if (source === BookmarkSource.PODCAST) {
+      try {
+        log.info("Extracting podcast metadata", { bookmarkId, url });
+        const podcastMetadata = await extractPodcastMetadata(url);
+
+        if (podcastMetadata) {
+          await bookmarkRepo.mergeMetadata(bookmarkId, {
+            linkPreview: podcastMetadata,
+          });
+
+          log.info("Podcast metadata extracted and saved", {
+            bookmarkId,
+            title: podcastMetadata.title,
+            hasThumbnail: !!podcastMetadata.thumbnailUrl,
+          });
+
+          // Successfully extracted podcast metadata, skip OpenGraph scraping
+          return;
+        } else {
+          log.warn("Podcast metadata extraction returned null, falling back to OpenGraph", {
+            bookmarkId,
+          });
+        }
+      } catch (podcastError) {
+        log.warn(podcastError, "Failed to extract podcast metadata, falling back to OpenGraph", {
+          bookmarkId,
+          url,
+        });
+        // Continue to OpenGraph scraping as fallback
+      }
+    }
+
     // Extract general link preview metadata (thumbnails, etc.)
+    // This is used for all non-YouTube sources, or as fallback for podcasts
     const existingPreview = bookmark.metadata?.linkPreview ?? null;
     const preview = await linkPreviewService.fetchMetadata(url, {
       existingMetadata: existingPreview,
@@ -85,6 +122,7 @@ export async function handleBookmarkMetadata(event: {
       bookmarkId,
       hasThumbnail: !!preview.thumbnailUrl,
       hasYouTubeMetadata: source === BookmarkSource.YOUTUBE,
+      hasPodcastMetadata: source === BookmarkSource.PODCAST,
     });
   } catch (error) {
     log.error(error, "Failed to enrich bookmark metadata", {
