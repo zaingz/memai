@@ -23,6 +23,7 @@ import {
   ListDailyDigestsResponse,
 } from "./types";
 import { bookmarkCreatedTopic } from "./events/bookmark-created.events";
+import { audioDownloadedTopic } from "./events/audio-downloaded.events";
 import { BookmarkRepository } from "./repositories/bookmark.repository";
 import { TranscriptionRepository } from "./repositories/transcription.repository";
 import { DailyDigestRepository } from "./repositories/daily-digest.repository";
@@ -620,6 +621,100 @@ export const fixArrayMetadata = api(
 
       throw APIError.internal(
         `Failed to fix array metadata: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+);
+
+// ADMIN ENDPOINT - Retry stuck podcast transcriptions
+// Re-publishes audio-downloaded events for stuck transcriptions
+export const retryStuckTranscriptions = api(
+  { expose: true, method: "POST", path: "/admin/retry-stuck-transcriptions", auth: true },
+  async (req?: { bookmarkId?: number }): Promise<{ message: string; retried: number }> => {
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+
+    const userId = auth.userID;
+
+    log.info("Retrying stuck transcriptions", { userId, specificBookmark: req?.bookmarkId });
+
+    try {
+      // Find bookmarks with stuck transcriptions (processing for > 10 minutes)
+      const stuckQuery = req?.bookmarkId
+        ? `
+          SELECT b.id, b.url, b.source
+          FROM bookmarks b
+          INNER JOIN transcriptions t ON b.id = t.bookmark_id
+          WHERE b.id = ${req.bookmarkId}
+          AND b.user_id = ${userId}
+          AND t.status = 'processing'
+        `
+        : `
+          SELECT b.id, b.url, b.source
+          FROM bookmarks b
+          INNER JOIN transcriptions t ON b.id = t.bookmark_id
+          WHERE b.user_id = ${userId}
+          AND t.status = 'processing'
+          AND t.processing_started_at < NOW() - INTERVAL '10 minutes'
+        `;
+
+      const stuckBookmarks: Array<{ id: number; url: string; source: string }> = [];
+      for await (const row of db.query<{ id: number; url: string; source: string }>(stuckQuery)) {
+        stuckBookmarks.push(row);
+      }
+
+      if (stuckBookmarks.length === 0) {
+        return {
+          message: "No stuck transcriptions found",
+          retried: 0,
+        };
+      }
+
+      log.info("Found stuck transcriptions", {
+        count: stuckBookmarks.length,
+        bookmarkIds: stuckBookmarks.map(b => b.id),
+      });
+
+      // Re-publish audio-downloaded events for podcast bookmarks
+      let retried = 0;
+      for (const bookmark of stuckBookmarks) {
+        if (bookmark.source === "podcast") {
+          const audioBucketKey = `audio-${bookmark.id}-podcast.mp3`;
+
+          // Reset to pending
+          await transcriptionRepo.createPending(bookmark.id);
+
+          // Re-publish event
+          await audioDownloadedTopic.publish({
+            bookmarkId: bookmark.id,
+            audioBucketKey,
+            source: "podcast" as BookmarkSource,
+            metadata: { episodeUrl: bookmark.url },
+          });
+
+          retried++;
+          log.info("Re-published audio-downloaded event", {
+            bookmarkId: bookmark.id,
+            audioBucketKey,
+          });
+        } else {
+          log.warn("Skipping non-podcast bookmark", {
+            bookmarkId: bookmark.id,
+            source: bookmark.source,
+          });
+        }
+      }
+
+      return {
+        message: `Successfully retried ${retried} stuck transcription(s)`,
+        retried,
+      };
+    } catch (error) {
+      log.error(error, "Failed to retry stuck transcriptions", { userId });
+      throw APIError.internal(
+        `Failed to retry stuck transcriptions: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
