@@ -404,24 +404,22 @@ describe("PodcastDownloaderService", () => {
         feedUrl: episodeUrl,
       });
 
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: async () => `<?xml version="1.0"?>
+      // Mock fetch: first for RSS, second for audio download
+      mockFetch
+        .mockResolvedValueOnce(createMockRssFetchResponse(`<?xml version="1.0"?>
           <rss><channel>
             <item>
               <title>Episode</title>
               <enclosure url="https://example.com/empty.mp3" type="audio/mpeg" />
             </item>
-          </channel></rss>`,
-      });
+          </channel></rss>`))
+        .mockResolvedValueOnce(createMockAudioFetchResponse());
 
       mockParsePodcast.mockImplementation((xml: string, callback: Function) => {
         callback(null, {
           episodes: [{ title: "Episode", enclosure: { url: "https://example.com/empty.mp3" } }],
         });
       });
-
-      mockFetch.mockResolvedValue(createMockAudioFetchResponse());
       mockExistsSync.mockReturnValue(true);
       mockStatSync.mockReturnValue({ size: 0 }); // Empty file
       mockUnlinkSync.mockReturnValue(undefined);
@@ -441,24 +439,22 @@ describe("PodcastDownloaderService", () => {
         feedUrl: episodeUrl,
       });
 
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: async () => `<?xml version="1.0"?>
+      // Mock fetch: first for RSS, second for audio download
+      mockFetch
+        .mockResolvedValueOnce(createMockRssFetchResponse(`<?xml version="1.0"?>
           <rss><channel>
             <item>
               <title>Episode</title>
               <enclosure url="https://example.com/huge.mp3" type="audio/mpeg" />
             </item>
-          </channel></rss>`,
-      });
+          </channel></rss>`))
+        .mockResolvedValueOnce(createMockAudioFetchResponse());
 
       mockParsePodcast.mockImplementation((xml: string, callback: Function) => {
         callback(null, {
           episodes: [{ title: "Episode", enclosure: { url: "https://example.com/huge.mp3" } }],
         });
       });
-
-      mockFetch.mockResolvedValue(createMockAudioFetchResponse());
       mockExistsSync.mockReturnValue(true);
       mockStatSync.mockReturnValue({ size: 600 * 1024 * 1024 }); // 600MB (over 500MB limit)
       mockUnlinkSync.mockReturnValue(undefined);
@@ -634,24 +630,22 @@ describe("PodcastDownloaderService", () => {
         feedUrl: episodeUrl,
       });
 
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: async () => `<?xml version="1.0"?>
+      // Mock fetch: first for RSS, second for audio download
+      mockFetch
+        .mockResolvedValueOnce(createMockRssFetchResponse(`<?xml version="1.0"?>
           <rss><channel>
             <item>
               <title>Episode</title>
               <enclosure url="https://example.com/audio.mp3" type="audio/mpeg" />
             </item>
-          </channel></rss>`,
-      });
+          </channel></rss>`))
+        .mockResolvedValueOnce(createMockAudioFetchResponse());
 
       mockParsePodcast.mockImplementation((xml: string, callback: Function) => {
         callback(null, {
           episodes: [{ title: "Episode", enclosure: { url: "https://example.com/audio.mp3" } }],
         });
       });
-
-      mockFetch.mockResolvedValue(createMockAudioFetchResponse());
       mockExistsSync.mockReturnValue(true);
       mockStatSync.mockReturnValue({ size: 5000000 });
       mockReadFileSync.mockReturnValue(Buffer.from("audio"));
