@@ -590,7 +590,7 @@ export const fixArrayMetadata = api(
         UPDATE bookmarks
         SET metadata = (
           SELECT elem
-          FROM jsonb_array_elements(metadata) AS elem
+          FROM jsonb_array_elements(metadata) WITH ORDINALITY AS t(elem, ordinality)
           WHERE elem IS NOT NULL AND elem != 'null'::jsonb
           ORDER BY ordinality DESC
           LIMIT 1
