@@ -642,27 +642,32 @@ export const retryStuckTranscriptions = api(
 
     try {
       // Find bookmarks with stuck transcriptions (processing for > 10 minutes)
-      const stuckQuery = req?.bookmarkId
-        ? `
+      const stuckBookmarks: Array<{ id: number; url: string; source: string }> = [];
+
+      if (req?.bookmarkId) {
+        // Specific bookmark requested
+        for await (const row of db.query<{ id: number; url: string; source: string }>`
           SELECT b.id, b.url, b.source
           FROM bookmarks b
           INNER JOIN transcriptions t ON b.id = t.bookmark_id
           WHERE b.id = ${req.bookmarkId}
           AND b.user_id = ${userId}
           AND t.status = 'processing'
-        `
-        : `
+        `) {
+          stuckBookmarks.push(row);
+        }
+      } else {
+        // All stuck transcriptions
+        for await (const row of db.query<{ id: number; url: string; source: string }>`
           SELECT b.id, b.url, b.source
           FROM bookmarks b
           INNER JOIN transcriptions t ON b.id = t.bookmark_id
           WHERE b.user_id = ${userId}
           AND t.status = 'processing'
           AND t.processing_started_at < NOW() - INTERVAL '10 minutes'
-        `;
-
-      const stuckBookmarks: Array<{ id: number; url: string; source: string }> = [];
-      for await (const row of db.query<{ id: number; url: string; source: string }>(stuckQuery)) {
-        stuckBookmarks.push(row);
+        `) {
+          stuckBookmarks.push(row);
+        }
       }
 
       if (stuckBookmarks.length === 0) {
