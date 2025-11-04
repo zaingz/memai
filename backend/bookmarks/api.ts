@@ -23,7 +23,7 @@ import {
   ListDailyDigestsResponse,
 } from "./types";
 import { bookmarkCreatedTopic } from "./events/bookmark-created.events";
-import { audioDownloadedTopic } from "./events/audio-downloaded.events";
+import { bookmarkSourceClassifiedTopic } from "./events/bookmark-source-classified.events";
 import { BookmarkRepository } from "./repositories/bookmark.repository";
 import { TranscriptionRepository } from "./repositories/transcription.repository";
 import { DailyDigestRepository } from "./repositories/daily-digest.repository";
@@ -682,12 +682,10 @@ export const retryStuckTranscriptions = api(
         bookmarkIds: stuckBookmarks.map(b => b.id),
       });
 
-      // Re-publish audio-downloaded events for podcast bookmarks
+      // Re-publish source-classified events to trigger full re-download and transcription
       let retried = 0;
       for (const bookmark of stuckBookmarks) {
-        if (bookmark.source === "podcast") {
-          const audioBucketKey = `audio-${bookmark.id}-podcast.mp3`;
-
+        if (bookmark.source === "podcast" || bookmark.source === "youtube") {
           // Reset transcription status to pending (UPDATE existing record)
           await db.exec`
             UPDATE transcriptions
@@ -699,21 +697,20 @@ export const retryStuckTranscriptions = api(
 
           log.info("Reset transcription to pending", { bookmarkId: bookmark.id });
 
-          // Re-publish event
-          await audioDownloadedTopic.publish({
+          // Re-publish source-classified event to trigger fresh download
+          await bookmarkSourceClassifiedTopic.publish({
             bookmarkId: bookmark.id,
-            audioBucketKey,
             source: bookmark.source,
-            metadata: { episodeUrl: bookmark.url },
+            url: bookmark.url,
           });
 
           retried++;
-          log.info("Re-published audio-downloaded event", {
+          log.info("Re-published source-classified event for re-download", {
             bookmarkId: bookmark.id,
-            audioBucketKey,
+            source: bookmark.source,
           });
         } else {
-          log.warn("Skipping non-podcast bookmark", {
+          log.warn("Skipping non-audio bookmark", {
             bookmarkId: bookmark.id,
             source: bookmark.source,
           });
