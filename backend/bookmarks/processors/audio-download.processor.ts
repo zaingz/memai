@@ -11,6 +11,7 @@ import { GeminiService } from "../services/gemini.service";
 import { TranscriptionRepository } from "../repositories/transcription.repository";
 import { extractYouTubeVideoId } from "../utils/youtube-url.util";
 import { buildYouTubeUrl } from "../utils/youtube-url.util";
+import { parsePodcastUrl } from "../utils/podcast-url.util";
 import { BookmarkSource } from "../types/domain.types";
 import { audioFilesBucket } from "../storage";
 
@@ -140,7 +141,24 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
       log.info("Published audio-transcribed event", { bookmarkId });
       return; // Exit early - success!
     } else if (source === BookmarkSource.PODCAST) {
-      // Podcast-specific download
+      // Check if this is a Spotify podcast (unsupported)
+      const podcastInfo = parsePodcastUrl(url);
+      if (podcastInfo.platform === 'spotify') {
+        log.warn("Spotify podcast detected - not supported", {
+          bookmarkId,
+          url,
+          episodeId: podcastInfo.episodeId,
+        });
+
+        await transcriptionRepo.markAsFailed(
+          bookmarkId,
+          "Spotify podcasts are not supported - Spotify does not provide direct audio access via their API"
+        );
+
+        return; // Exit - Spotify not supported
+      }
+
+      // Podcast-specific download (non-Spotify)
       log.info("Downloading podcast audio", { bookmarkId, url });
       audioBucketKey = await podcastDownloader.downloadAndUpload(url, bookmarkId);
       metadata = { episodeUrl: url };

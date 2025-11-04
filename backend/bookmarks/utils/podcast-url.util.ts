@@ -1,8 +1,9 @@
-export type PodcastPlatform = 'rss' | 'apple' | 'google' | 'unknown';
+export type PodcastPlatform = 'rss' | 'apple' | 'google' | 'spotify' | 'unknown';
 
 export interface PodcastUrlInfo {
   platform: PodcastPlatform;
   showId?: string;
+  episodeId?: string;
   feedUrl?: string;
 }
 
@@ -30,6 +31,16 @@ export function parsePodcastUrl(url: string): PodcastUrlInfo {
     return {
       platform: 'apple',
       showId: appleMatch[1],
+    };
+  }
+
+  // Spotify Podcasts: https://open.spotify.com/episode/[episode_id]
+  // Note: Spotify does not provide direct audio access via API
+  const spotifyMatch = url.match(/open\.spotify\.com\/episode\/([a-zA-Z0-9]+)/);
+  if (spotifyMatch) {
+    return {
+      platform: 'spotify',
+      episodeId: spotifyMatch[1],
     };
   }
 
