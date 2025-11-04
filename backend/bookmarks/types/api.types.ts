@@ -89,3 +89,14 @@ export interface BookmarkDetailsResponse {
   transcription: TranscriptionDetails | null;
   webContent: WebContent | null;
 }
+
+// Request interface for retrying stuck transcription
+export interface RetryBookmarkRequest {
+  id: number;
+}
+
+// Response interface for retry operation
+export interface RetryBookmarkResponse {
+  message: string;
+  success: boolean;
+}

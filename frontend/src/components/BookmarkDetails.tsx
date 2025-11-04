@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Bookmark, BookmarkDetailsResponse } from "../types";
@@ -11,6 +11,7 @@ import {
   formatPercentage,
   formatRelativeTime,
 } from "../lib/formatters";
+import { retryBookmarkTranscription, getBookmarkDetails } from "../lib/api";
 import "./BookmarkDetails.css";
 
 interface BookmarkDetailsProps {
@@ -61,6 +62,10 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
   // Use details.bookmark for enriched metadata (from API), fall back to bookmark prop (from list)
   const enrichedBookmark = details?.bookmark || bookmark;
 
+  // Retry button state
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
   // Early return if no bookmark to display
   if (!enrichedBookmark) {
     return null;
@@ -68,6 +73,52 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
 
   const preview = enrichedBookmark.metadata?.linkPreview;
   const youtubeMetadata = enrichedBookmark.metadata?.youtubeMetadata as any;
+
+  // Helper function to determine if retry button should be shown
+  const shouldShowRetryButton = useMemo(() => {
+    if (!details?.transcription) return false;
+
+    const transcription = details.transcription;
+    const status = transcription.status;
+
+    // Always show for failed
+    if (status === "failed") return true;
+
+    // Check if pending or processing for > 10 minutes
+    if (status === "pending" || status === "processing") {
+      const createdAt = new Date(transcription.created_at);
+      const minutesElapsed = (Date.now() - createdAt.getTime()) / (1000 * 60);
+      return minutesElapsed > 10;
+    }
+
+    return false;
+  }, [details?.transcription]);
+
+  // Retry button click handler
+  const handleRetry = async () => {
+    if (!enrichedBookmark?.id) return;
+
+    setIsRetrying(true);
+    setRetryError(null);
+
+    try {
+      const result = await retryBookmarkTranscription(enrichedBookmark.id);
+
+      if (result.success) {
+        // Auto-refresh bookmark details after successful retry
+        // Note: This assumes the parent component will re-fetch details
+        // You may need to add a callback prop to trigger parent refresh
+        window.location.reload(); // Simple refresh for now
+      } else {
+        setRetryError(result.message);
+      }
+    } catch (error) {
+      console.error("Retry failed:", error);
+      setRetryError(error instanceof Error ? error.message : "Failed to retry transcription");
+    } finally {
+      setIsRetrying(false);
+    }
+  };
 
   const bookmarkMetadata = useMemo(() => {
     if (!enrichedBookmark?.metadata) return [] as Array<[string, unknown]>;
@@ -463,6 +514,25 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
                 </span>
               </div>
             </div>
+
+            {/* Retry Button */}
+            {shouldShowRetryButton && (
+              <div className="detail-item" style={{ marginTop: "1rem" }}>
+                <button
+                  className="btn btn-sm btn-outline"
+                  onClick={handleRetry}
+                  disabled={isRetrying}
+                  style={{ width: "auto" }}
+                >
+                  {isRetrying ? "Retrying..." : "Retry Transcription"}
+                </button>
+                {retryError && (
+                  <p style={{ color: "var(--color-error)", marginTop: "0.5rem", fontSize: "0.875rem" }}>
+                    {retryError}
+                  </p>
+                )}
+              </div>
+            )}
 
             {details.transcription.error_message && (
               <div className="details-alert details-alert--error">

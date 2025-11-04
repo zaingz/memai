@@ -77,6 +77,12 @@ export function createBookmark(data: {
   });
 }
 
+export function retryBookmarkTranscription(id: number): Promise<{ message: string; success: boolean }> {
+  return request(`/bookmarks/${id}/retry`, {
+    method: "POST",
+  });
+}
+
 // Daily Digest API Functions
 export function generateDailyDigest(date?: string, forceRegenerate?: boolean): Promise<import("../types").GenerateDailyDigestResponse> {
   return request(`/digests/generate`, {

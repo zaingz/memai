@@ -15,6 +15,8 @@ import {
   BookmarkDetailsResponse,
   TranscriptionDetails,
   BookmarkSource,
+  RetryBookmarkRequest,
+  RetryBookmarkResponse,
   GenerateDailyDigestRequest,
   GenerateDailyDigestResponse,
   GetDailyDigestRequest,
@@ -248,6 +250,97 @@ export const getDetails = api(
       transcription: transcription ? toTranscriptionDetails(transcription) : null,
       webContent,
     };
+  }
+);
+
+// RETRY TRANSCRIPTION - Retry stuck or failed transcription for a bookmark
+export const retryTranscription = api(
+  { expose: true, method: "POST", path: "/bookmarks/:id/retry", auth: true },
+  async (req: RetryBookmarkRequest): Promise<RetryBookmarkResponse> => {
+    // Get authenticated user
+    const auth = getAuthData();
+    if (!auth) {
+      throw APIError.unauthenticated("Authentication required");
+    }
+    const userId = auth.userID;
+
+    log.info("Retrying bookmark transcription", { bookmarkId: req.id, userId });
+
+    try {
+      // Fetch bookmark and verify ownership
+      const bookmark = await bookmarkRepo.findById(req.id, userId);
+      if (!bookmark) {
+        throw APIError.notFound(`Bookmark with id ${req.id} not found`);
+      }
+
+      // Check if bookmark is audio type (podcast or youtube)
+      if (bookmark.source !== "podcast" && bookmark.source !== "youtube") {
+        throw APIError.invalidArgument(
+          `Cannot retry transcription for source type '${bookmark.source}'. Only 'podcast' and 'youtube' are supported.`
+        );
+      }
+
+      // Fetch transcription record
+      const transcription = await transcriptionRepo.findByBookmarkId(req.id);
+      if (!transcription) {
+        throw APIError.notFound(`No transcription record found for bookmark ${req.id}`);
+      }
+
+      // Check if transcription is stuck or failed
+      const now = new Date();
+      const createdAt = new Date(transcription.created_at);
+      const minutesElapsed = (now.getTime() - createdAt.getTime()) / (1000 * 60);
+
+      const isStuck =
+        transcription.status === "failed" ||
+        (transcription.status === "pending" && minutesElapsed > 10) ||
+        (transcription.status === "processing" && minutesElapsed > 10);
+
+      if (!isStuck) {
+        return {
+          success: false,
+          message: `Transcription is not stuck (status: ${transcription.status}, age: ${Math.round(minutesElapsed)} minutes)`,
+        };
+      }
+
+      // Reset transcription status to pending
+      await db.exec`
+        UPDATE transcriptions
+        SET status = 'pending',
+            processing_started_at = NULL,
+            error_message = NULL
+        WHERE bookmark_id = ${req.id}
+      `;
+
+      log.info("Reset transcription to pending", { bookmarkId: req.id });
+
+      // Re-publish source-classified event to trigger fresh download and transcription
+      await bookmarkSourceClassifiedTopic.publish({
+        bookmarkId: req.id,
+        source: bookmark.source,
+        url: bookmark.url,
+      });
+
+      log.info("Re-published source-classified event for retry", {
+        bookmarkId: req.id,
+        source: bookmark.source,
+      });
+
+      return {
+        success: true,
+        message: "Transcription retry initiated successfully",
+      };
+    } catch (error) {
+      log.error(error, "Failed to retry transcription", { bookmarkId: req.id, userId });
+
+      if (error instanceof APIError) {
+        throw error;
+      }
+
+      throw APIError.internal(
+        `Failed to retry transcription: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 );
 
