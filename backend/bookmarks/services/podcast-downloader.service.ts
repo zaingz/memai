@@ -1,5 +1,6 @@
-import { spawn } from "child_process";
 import fs from "fs";
+import { pipeline } from "stream/promises";
+import { Readable } from "stream";
 import log from "encore.dev/log";
 import { audioFilesBucket } from "../storage";
 import { parsePodcastUrl, getApplePodcastRss } from "../utils/podcast-url.util";
@@ -320,8 +321,8 @@ export class PodcastDownloaderService {
     });
 
     try {
-      // Download with spawn (avoids shell injection)
-      await this.downloadWithCurl(audioUrl, tempPath);
+      // Download with native fetch (no system binary dependency)
+      await this.downloadWithFetch(audioUrl, tempPath);
 
       // Verify file was downloaded
       if (!fs.existsSync(tempPath)) {
@@ -394,42 +395,85 @@ export class PodcastDownloaderService {
   }
 
   /**
-   * Downloads file using curl via spawn (secure, no shell injection)
+   * Downloads file using native fetch with streaming (no system binary dependency)
    * @param url - URL to download
    * @param outputPath - Where to save the file
    */
-  private downloadWithCurl(url: string, outputPath: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // Use spawn with array arguments (no shell interpretation)
-      const curl = spawn('curl', [
-        '-L',              // Follow redirects
-        '-f',              // Fail on HTTP errors
-        '--max-time', String(DOWNLOAD_TIMEOUT / 1000), // Timeout in seconds
-        '--max-filesize', String(MAX_FILE_SIZE),        // Max file size
-        '-o', outputPath,  // Output file
-        url                // URL (passed as separate argument, not interpolated)
-      ]);
+  private async downloadWithFetch(url: string, outputPath: string): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT);
 
-      let stderr = '';
+    try {
+      log.info("Starting fetch download", { url, outputPath });
 
-      curl.stderr.on('data', (data) => {
-        stderr += data.toString();
+      // Fetch with timeout (follows redirects by default)
+      const response = await fetch(url, {
+        signal: controller.signal,
+        redirect: 'follow',
       });
 
-      curl.on('error', (error) => {
-        reject(new Error(`curl spawn error: ${error.message}`));
-      });
+      clearTimeout(timeout);
 
-      curl.on('close', (code) => {
-        if (code !== 0) {
-          reject(new Error(`curl exited with code ${code}: ${stderr}`));
-        } else {
-          if (stderr) {
-            log.debug("curl stderr output", { stderr });
-          }
-          resolve();
+      // Check HTTP status (fail on 4xx/5xx)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      // Check Content-Length header for size limit
+      const contentLength = response.headers.get('content-length');
+      if (contentLength) {
+        const size = parseInt(contentLength, 10);
+        if (size > MAX_FILE_SIZE) {
+          throw new Error(
+            `File too large: ${(size / 1024 / 1024).toFixed(2)}MB (max ${MAX_FILE_SIZE / 1024 / 1024}MB)`
+          );
+        }
+        log.info("Content-Length check passed", { size, maxSize: MAX_FILE_SIZE });
+      }
+
+      // Stream response body to file
+      if (!response.body) {
+        throw new Error('Response body is null');
+      }
+
+      const fileStream = fs.createWriteStream(outputPath);
+      const readableStream = Readable.fromWeb(response.body as any);
+
+      // Track downloaded bytes to enforce size limit even without Content-Length
+      let downloadedBytes = 0;
+
+      readableStream.on('data', (chunk: Buffer) => {
+        downloadedBytes += chunk.length;
+        if (downloadedBytes > MAX_FILE_SIZE) {
+          readableStream.destroy(new Error(
+            `File exceeded size limit during download: ${(downloadedBytes / 1024 / 1024).toFixed(2)}MB (max ${MAX_FILE_SIZE / 1024 / 1024}MB)`
+          ));
         }
       });
-    });
+
+      // Use pipeline for proper error handling and cleanup
+      await pipeline(readableStream, fileStream);
+
+      log.info("Fetch download completed", {
+        outputPath,
+        downloadedBytes,
+        downloadedMB: (downloadedBytes / 1024 / 1024).toFixed(2),
+      });
+    } catch (error: any) {
+      clearTimeout(timeout);
+
+      // Clean up partial file on error
+      if (fs.existsSync(outputPath)) {
+        try {
+          fs.unlinkSync(outputPath);
+        } catch {}
+      }
+
+      if (error.name === 'AbortError') {
+        throw new Error(`Download timeout after ${DOWNLOAD_TIMEOUT / 1000} seconds`);
+      }
+
+      throw new Error(`Download failed: ${error.message}`);
+    }
   }
 }
