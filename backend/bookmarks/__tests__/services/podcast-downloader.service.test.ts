@@ -27,13 +27,21 @@ vi.mock("fs");
 // Mock Readable.fromWeb to pass through Node.js streams
 vi.mock("stream", async (importOriginal) => {
   const actual = await importOriginal<typeof import("stream")>();
+
+  // Create a mock Readable class that extends the actual one
+  class MockReadable extends actual.Readable {
+    static fromWeb(stream: any) {
+      // If it's already a Node.js Readable, pass it through
+      return stream;
+    }
+  }
+
+  // Copy other static methods from the actual Readable
+  Object.assign(MockReadable, actual.Readable);
+
   return {
     ...actual,
-    Readable: {
-      ...actual.Readable,
-      // Pass through Node.js Readable streams directly
-      fromWeb: (stream: any) => stream,
-    },
+    Readable: MockReadable,
   };
 });
 
@@ -153,8 +161,10 @@ describe("PodcastDownloaderService", () => {
             return null;
           },
         },
-        // Return Node.js Readable directly - we'll mock Readable.fromWeb to pass it through
-        body: createBodyStream(),
+        // Use getter to create fresh stream each time body is accessed
+        get body() {
+          return createBodyStream();
+        },
       } as any;
     };
 
