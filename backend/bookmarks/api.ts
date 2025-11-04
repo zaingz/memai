@@ -688,8 +688,16 @@ export const retryStuckTranscriptions = api(
         if (bookmark.source === "podcast") {
           const audioBucketKey = `audio-${bookmark.id}-podcast.mp3`;
 
-          // Reset to pending
-          await transcriptionRepo.createPending(bookmark.id);
+          // Reset transcription status to pending (UPDATE existing record)
+          await db.exec`
+            UPDATE transcriptions
+            SET status = 'pending',
+                processing_started_at = NULL,
+                error_message = NULL
+            WHERE bookmark_id = ${bookmark.id}
+          `;
+
+          log.info("Reset transcription to pending", { bookmarkId: bookmark.id });
 
           // Re-publish event
           await audioDownloadedTopic.publish({
