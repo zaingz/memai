@@ -58,16 +58,19 @@ function formatMetadataValue(value: unknown): string {
 }
 
 export function BookmarkDetails({ bookmark, details, onClose, isOpen }: BookmarkDetailsProps) {
-  const preview = bookmark?.metadata?.linkPreview;
-  const youtubeMetadata = bookmark?.metadata?.youtubeMetadata as any;
+  // Use details.bookmark for enriched metadata (from API), fall back to bookmark prop (from list)
+  const enrichedBookmark = details?.bookmark || bookmark;
+
+  const preview = enrichedBookmark?.metadata?.linkPreview;
+  const youtubeMetadata = enrichedBookmark?.metadata?.youtubeMetadata as any;
 
   const bookmarkMetadata = useMemo(() => {
-    if (!bookmark?.metadata) return [] as Array<[string, unknown]>;
+    if (!enrichedBookmark?.metadata) return [] as Array<[string, unknown]>;
 
-    return Object.entries(bookmark.metadata).filter(
+    return Object.entries(enrichedBookmark.metadata).filter(
       ([key]) => key !== "linkPreview" && key !== "youtubeMetadata"
     );
-  }, [bookmark]);
+  }, [enrichedBookmark]);
 
   const webContentMetadata = useMemo(() => {
     if (!details?.webContent?.metadata) return [] as Array<[string, unknown]>;
@@ -136,10 +139,10 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
 
         {/* Header Section */}
         <div className="details-header">
-          <span className="details-badge">{SOURCE_LABELS[bookmark.source] ?? "Bookmark"}</span>
+          <span className="details-badge">{SOURCE_LABELS[enrichedBookmark.source] ?? "Bookmark"}</span>
           <h2 className="details-title">
-            {preview?.title || details?.webContent?.page_title || bookmark.title ||
-              extractHostname(bookmark.url)}
+            {preview?.title || details?.webContent?.page_title || enrichedBookmark.title ||
+              extractHostname(enrichedBookmark.url)}
           </h2>
           {(preview?.description || details?.webContent?.page_description) && (
             <p className="details-description">
@@ -147,7 +150,7 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
             </p>
           )}
           <a
-            href={bookmark.url}
+            href={enrichedBookmark.url}
             target="_blank"
             rel="noopener noreferrer"
             className="details-link"
@@ -164,31 +167,31 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
               <span className="detail-label">Site</span>
               <span className="detail-value">
                 {preview?.siteName || details?.webContent?.metadata?.siteName ||
-                  extractHostname(bookmark.url)}
+                  extractHostname(enrichedBookmark.url)}
               </span>
             </div>
             <div className="detail-item">
               <span className="detail-label">Source</span>
               <span className="detail-value">
-                {SOURCE_LABELS[bookmark.source] ?? formatStatus(bookmark.source)}
+                {SOURCE_LABELS[enrichedBookmark.source] ?? formatStatus(enrichedBookmark.source)}
               </span>
             </div>
             <div className="detail-item">
               <span className="detail-label">Added</span>
-              <span className="detail-value">{formatDateTime(bookmark.created_at)}</span>
+              <span className="detail-value">{formatDateTime(enrichedBookmark.created_at)}</span>
             </div>
             <div className="detail-item">
               <span className="detail-label">Last Updated</span>
               <span className="detail-value">
-                {formatDateTime(bookmark.updated_at)}
+                {formatDateTime(enrichedBookmark.updated_at)}
                 <span className="detail-subtext">
-                  {formatRelativeTime(bookmark.updated_at)}
+                  {formatRelativeTime(enrichedBookmark.updated_at)}
                 </span>
               </span>
             </div>
             <div className="detail-item">
               <span className="detail-label">Captured</span>
-              <span className="detail-value">{formatDateTime(bookmark.client_time)}</span>
+              <span className="detail-value">{formatDateTime(enrichedBookmark.client_time)}</span>
             </div>
             {preview?.publishedTime && (
               <div className="detail-item">
@@ -200,7 +203,7 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
             )}
             <div className="detail-item">
               <span className="detail-label">Bookmark ID</span>
-              <span className="detail-value detail-value--muted">#{bookmark.id}</span>
+              <span className="detail-value detail-value--muted">#{enrichedBookmark.id}</span>
             </div>
           </div>
 
@@ -220,7 +223,7 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
         </div>
 
         {/* YouTube Metadata Section */}
-        {youtubeMetadata && bookmark.source === 'youtube' && (
+        {youtubeMetadata && enrichedBookmark.source === 'youtube' && (
           <div className="details-section">
             <h3 className="section-title">YouTube Video Details</h3>
             <div className="details-grid">
