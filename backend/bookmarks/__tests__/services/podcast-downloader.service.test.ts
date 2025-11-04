@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import { EventEmitter } from "events";
+import { Readable } from "stream";
 
 // Create hoisted mocks - vi.hoisted ensures they're available before module imports
 const mockParsePodcastUrl = vi.hoisted(() => vi.fn());
@@ -22,6 +23,19 @@ const mockFuzzysort = vi.hoisted(() => {
 });
 
 vi.mock("fs");
+
+// Mock Readable.fromWeb to pass through Node.js streams
+vi.mock("stream", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("stream")>();
+  return {
+    ...actual,
+    Readable: {
+      ...actual.Readable,
+      // Pass through Node.js Readable streams directly
+      fromWeb: (stream: any) => stream,
+    },
+  };
+});
 
 vi.mock("../../storage", () => ({
   audioFilesBucket: {
@@ -105,6 +119,7 @@ describe("PodcastDownloaderService", () => {
 
     /**
      * Helper to create a mock fetch response for audio download
+     * Returns a mock that bypasses Web ReadableStream entirely
      */
     const createMockAudioFetchResponse = (options: {
       ok?: boolean;
@@ -119,13 +134,12 @@ describe("PodcastDownloaderService", () => {
         bodyData = Buffer.from("fake audio data"),
       } = options;
 
-      // Create a proper ReadableStream mock that works with Readable.fromWeb()
-      const mockBody = new ReadableStream({
-        start(controller) {
-          controller.enqueue(bodyData);
-          controller.close();
-        },
-      });
+      // Create a Node.js Readable stream directly
+      // The production code will call Readable.fromWeb() on this,
+      // but since it's already a Node.js stream, we can mock that conversion
+      const createBodyStream = () => {
+        return Readable.from([bodyData]);
+      };
 
       return {
         ok,
@@ -139,7 +153,8 @@ describe("PodcastDownloaderService", () => {
             return null;
           },
         },
-        body: mockBody,
+        // Return Node.js Readable directly - we'll mock Readable.fromWeb to pass it through
+        body: createBodyStream(),
       } as any;
     };
 
@@ -311,7 +326,7 @@ describe("PodcastDownloaderService", () => {
             </item>
           </channel></rss>`,
         })
-        .mockResolvedValueOnce(createMockFetchResponse());
+        .mockResolvedValueOnce(createMockAudioFetchResponse());
 
       // Mock podcast parser
       mockParsePodcast.mockImplementation((xml: string, callback: Function) => {
@@ -406,7 +421,7 @@ describe("PodcastDownloaderService", () => {
         });
       });
 
-      mockFetch.mockResolvedValue(createMockFetchResponse());
+      mockFetch.mockResolvedValue(createMockAudioFetchResponse());
       mockExistsSync.mockReturnValue(true);
       mockStatSync.mockReturnValue({ size: 0 }); // Empty file
       mockUnlinkSync.mockReturnValue(undefined);
@@ -443,7 +458,7 @@ describe("PodcastDownloaderService", () => {
         });
       });
 
-      mockFetch.mockResolvedValue(createMockFetchResponse());
+      mockFetch.mockResolvedValue(createMockAudioFetchResponse());
       mockExistsSync.mockReturnValue(true);
       mockStatSync.mockReturnValue({ size: 600 * 1024 * 1024 }); // 600MB (over 500MB limit)
       mockUnlinkSync.mockReturnValue(undefined);
@@ -636,7 +651,7 @@ describe("PodcastDownloaderService", () => {
         });
       });
 
-      mockFetch.mockResolvedValue(createMockFetchResponse());
+      mockFetch.mockResolvedValue(createMockAudioFetchResponse());
       mockExistsSync.mockReturnValue(true);
       mockStatSync.mockReturnValue({ size: 5000000 });
       mockReadFileSync.mockReturnValue(Buffer.from("audio"));
