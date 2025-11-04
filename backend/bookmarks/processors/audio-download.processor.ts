@@ -51,21 +51,30 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
     const existing = await transcriptionRepo.findByBookmarkId(bookmarkId);
 
     if (existing && existing.status !== 'pending') {
-      // Detect zombie processes: stuck in "processing" for more than 10 minutes
+      // Detect zombie processes: stuck in "processing" for more than 10 minutes OR processing_started_at is null
       const ZOMBIE_THRESHOLD_MS = 600000; // 10 minutes
-      const isZombie = existing.status === 'processing' &&
-                       existing.processing_started_at &&
-                       (Date.now() - new Date(existing.processing_started_at).getTime()) > ZOMBIE_THRESHOLD_MS;
+
+      // A transcription is a zombie if:
+      // 1. Status is 'processing' AND processing_started_at is null (corrupted state from retry)
+      // 2. Status is 'processing' AND stuck for > 10 minutes
+      const isZombie = existing.status === 'processing' && (
+        !existing.processing_started_at || // NULL processing_started_at = corrupted state
+        (Date.now() - new Date(existing.processing_started_at).getTime()) > ZOMBIE_THRESHOLD_MS
+      );
 
       if (isZombie) {
         const zombieAgeMs = existing.processing_started_at
           ? Date.now() - new Date(existing.processing_started_at).getTime()
           : 0;
+        const zombieReason = !existing.processing_started_at
+          ? "processing_started_at is null (corrupted state)"
+          : `stuck for ${Math.floor(zombieAgeMs / 1000 / 60)} minutes`;
+
         log.warn("Detected zombie transcription process, resetting to retry", {
           bookmarkId,
           status: existing.status,
           processingStartedAt: existing.processing_started_at,
-          zombieAge: Math.floor(zombieAgeMs / 1000 / 60) + " minutes",
+          zombieReason,
         });
         // Reset to pending to allow retry
         await transcriptionRepo.createPending(bookmarkId);
@@ -73,6 +82,7 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
         log.warn("Transcription already processed, skipping duplicate event", {
           bookmarkId,
           currentStatus: existing.status,
+          processingStartedAt: existing.processing_started_at,
         });
         return;
       }
@@ -160,30 +170,68 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
 
       // Podcast-specific download (non-Spotify)
       log.info("Downloading podcast audio", { bookmarkId, url });
-      audioBucketKey = await podcastDownloader.downloadAndUpload(url, bookmarkId);
+
+      try {
+        audioBucketKey = await podcastDownloader.downloadAndUpload(url, bookmarkId);
+        log.info("Podcast downloader returned successfully", {
+          bookmarkId,
+          audioBucketKey,
+          hasAudioBucketKey: !!audioBucketKey,
+          audioBucketKeyType: typeof audioBucketKey,
+        });
+      } catch (downloadError) {
+        log.error(downloadError, "Podcast downloader threw error", {
+          bookmarkId,
+          url,
+          errorMessage: downloadError instanceof Error ? downloadError.message : String(downloadError),
+        });
+        throw downloadError;
+      }
+
       metadata = { episodeUrl: url };
+      log.info("Metadata assigned", { bookmarkId, metadata });
     } else {
       throw new Error(`Unsupported audio source: ${source}`);
     }
 
-    log.info("Audio download completed", {
+    log.info("Audio download completed, preparing to publish event", {
       bookmarkId,
       source,
       audioBucketKey,
+      hasAudioBucketKey: !!audioBucketKey,
+      metadataKeys: Object.keys(metadata),
     });
 
     // Publish event for next stage: Audio Transcription
-    const messageId = await audioDownloadedTopic.publish({
-      bookmarkId,
-      audioBucketKey,
-      source,
-      metadata,
-    });
+    try {
+      log.info("Publishing audio-downloaded event", {
+        bookmarkId,
+        audioBucketKey,
+        source,
+        metadata,
+      });
 
-    log.info("Published audio-downloaded event", {
-      bookmarkId,
-      messageId,
-    });
+      const messageId = await audioDownloadedTopic.publish({
+        bookmarkId,
+        audioBucketKey,
+        source,
+        metadata,
+      });
+
+      log.info("Successfully published audio-downloaded event", {
+        bookmarkId,
+        messageId,
+        audioBucketKey,
+      });
+    } catch (publishError) {
+      log.error(publishError, "Failed to publish audio-downloaded event", {
+        bookmarkId,
+        audioBucketKey,
+        errorMessage: publishError instanceof Error ? publishError.message : String(publishError),
+        errorStack: publishError instanceof Error ? publishError.stack : undefined,
+      });
+      throw publishError; // Re-throw to trigger failure handling
+    }
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
@@ -223,7 +271,8 @@ export async function handleAudioDownload(event: BookmarkSourceClassifiedEvent) 
  * Processes bookmarks that require audio download (YouTube, Podcast)
  *
  * Configuration:
- * - ackDeadline: 300s (5 minutes) to handle large podcast downloads
+ * - ackDeadline: 720s (12 minutes) to handle very large podcast downloads
+ *   Large podcasts (200-300MB) can take 10+ minutes to download
  *   (Default is 60s which times out for large files)
  */
 export const audioDownloadSubscription = new Subscription(
@@ -231,6 +280,6 @@ export const audioDownloadSubscription = new Subscription(
   "audio-download-processor",
   {
     handler: handleAudioDownload,
-    ackDeadline: "300s", // 5 minutes for large podcast downloads (168MB can take 60-120s)
+    ackDeadline: "720s", // 12 minutes for very large podcast downloads (200-300MB files)
   }
 );

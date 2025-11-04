@@ -9,7 +9,7 @@ import fuzzysort from "fuzzysort";
 
 // Configuration constants
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB limit
-const DOWNLOAD_TIMEOUT = 120000; // 2 minutes
+const DOWNLOAD_TIMEOUT = 600000; // 10 minutes (large podcasts can be 200-300MB)
 const FETCH_TIMEOUT = 30000; // 30 seconds for HTTP requests
 const MIN_FUZZY_MATCH_SCORE = -1000; // Minimum score for episode matching
 
@@ -65,7 +65,16 @@ export class PodcastDownloaderService {
     log.info("Found episode audio URL", { audioUrl, bookmarkId });
 
     // 4. Download audio from direct URL and upload to bucket
-    return await this.downloadAudioFromUrl(audioUrl, bookmarkId);
+    log.info("About to call downloadAudioFromUrl", { audioUrl, bookmarkId });
+    const bucketKey = await this.downloadAudioFromUrl(audioUrl, bookmarkId);
+    log.info("downloadAudioFromUrl returned successfully", {
+      bookmarkId,
+      bucketKey,
+      bucketKeyType: typeof bucketKey,
+      bucketKeyIsString: typeof bucketKey === 'string',
+      bucketKeyLength: bucketKey?.length,
+    });
+    return bucketKey;
   }
 
   /**
@@ -165,27 +174,47 @@ export class PodcastDownloaderService {
     rssFeedUrl: string,
     episodeTitle: string
   ): Promise<string> {
-    // Fetch RSS feed with timeout
-    const response = await fetchWithTimeout(rssFeedUrl);
+    log.info("Fetching RSS feed", { rssFeedUrl, episodeTitle });
+
+    // Fetch RSS feed with timeout (60 seconds for large feeds)
+    const response = await fetchWithTimeout(rssFeedUrl, 60000);
     if (!response.ok) {
       throw new Error(`Failed to fetch RSS feed: ${response.status} ${response.statusText}`);
     }
 
-    const xmlData = await response.text();
+    // Read response with timeout (large feeds like Joe Rogan can be 4-5MB)
+    const xmlData = await Promise.race([
+      response.text(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('RSS feed download timeout after 60s')), 60000)
+      )
+    ]);
 
-    // Parse RSS feed using node-podcast-parser
-    const podcast = await new Promise<import('node-podcast-parser').ParsedPodcast>(
-      (resolve, reject) => {
+    const feedSizeKB = (xmlData.length / 1024).toFixed(2);
+    log.info("RSS feed downloaded", { rssFeedUrl, sizeKB: feedSizeKB });
+
+    // Parse RSS feed with timeout (large feeds with thousands of episodes can take time)
+    const podcast = await Promise.race([
+      new Promise<import('node-podcast-parser').ParsedPodcast>((resolve, reject) => {
         parsePodcast(xmlData, (err, data) => {
           if (err) reject(err);
           else resolve(data);
         });
-      }
-    );
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('RSS feed parsing timeout after 60s')), 60000)
+      )
+    ]);
 
     if (!podcast.episodes || podcast.episodes.length === 0) {
       throw new Error('No episodes found in RSS feed');
     }
+
+    log.info("RSS feed parsed successfully", {
+      rssFeedUrl,
+      episodeCount: podcast.episodes.length,
+      podcastTitle: podcast.title
+    });
 
     // If episodeTitle is empty (RSS feed URL provided), use latest episode
     if (!episodeTitle) {
@@ -205,10 +234,21 @@ export class PodcastDownloaderService {
     }
 
     // Fuzzy match episode title with minimum score threshold
+    log.info("Starting fuzzy match for episode", {
+      searchTitle: episodeTitle,
+      totalEpisodes: podcast.episodes.length
+    });
+
     const episodeTitles = podcast.episodes.map((ep) => ep.title);
     const results = fuzzysort.go(episodeTitle, episodeTitles, {
       threshold: MIN_FUZZY_MATCH_SCORE,
       limit: 5, // Get top 5 matches for logging
+    });
+
+    log.info("Fuzzy match completed", {
+      searchTitle: episodeTitle,
+      matchesFound: results.length,
+      bestScore: results[0]?.score
     });
 
     if (results.length === 0 || results[0].score < MIN_FUZZY_MATCH_SCORE) {
@@ -324,6 +364,13 @@ export class PodcastDownloaderService {
 
       // Clean up temp file
       fs.unlinkSync(tempPath);
+
+      log.info("Cleanup complete, about to return bucket key", {
+        bookmarkId,
+        bucketKey,
+        bucketKeyType: typeof bucketKey,
+        bucketKeyLength: bucketKey.length,
+      });
 
       return bucketKey;
     } catch (error) {
