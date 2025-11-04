@@ -703,7 +703,7 @@ export const retryStuckTranscriptions = api(
           await audioDownloadedTopic.publish({
             bookmarkId: bookmark.id,
             audioBucketKey,
-            source: "podcast" as BookmarkSource,
+            source: bookmark.source,
             metadata: { episodeUrl: bookmark.url },
           });
 
