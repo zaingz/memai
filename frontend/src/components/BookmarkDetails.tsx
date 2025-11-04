@@ -61,8 +61,13 @@ export function BookmarkDetails({ bookmark, details, onClose, isOpen }: Bookmark
   // Use details.bookmark for enriched metadata (from API), fall back to bookmark prop (from list)
   const enrichedBookmark = details?.bookmark || bookmark;
 
-  const preview = enrichedBookmark?.metadata?.linkPreview;
-  const youtubeMetadata = enrichedBookmark?.metadata?.youtubeMetadata as any;
+  // Early return if no bookmark to display
+  if (!enrichedBookmark) {
+    return null;
+  }
+
+  const preview = enrichedBookmark.metadata?.linkPreview;
+  const youtubeMetadata = enrichedBookmark.metadata?.youtubeMetadata as any;
 
   const bookmarkMetadata = useMemo(() => {
     if (!enrichedBookmark?.metadata) return [] as Array<[string, unknown]>;
