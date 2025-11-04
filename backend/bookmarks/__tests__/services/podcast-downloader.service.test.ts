@@ -10,7 +10,6 @@ import fs from "fs";
 import { EventEmitter } from "events";
 
 // Create hoisted mocks - vi.hoisted ensures they're available before module imports
-const mockSpawn = vi.hoisted(() => vi.fn());
 const mockParsePodcastUrl = vi.hoisted(() => vi.fn());
 const mockGetApplePodcastRss = vi.hoisted(() => vi.fn());
 const mockParsePodcast = vi.hoisted(() => vi.fn());
@@ -21,11 +20,6 @@ const mockFuzzysort = vi.hoisted(() => {
   const goFn = vi.fn();
   return { go: goFn };
 });
-
-// Mock modules before imports
-vi.mock("child_process", () => ({
-  spawn: mockSpawn,
-}));
 
 vi.mock("fs");
 
@@ -98,21 +92,55 @@ describe("PodcastDownloaderService", () => {
 
   describe("downloadAndUpload", () => {
     /**
-     * Helper to create a mock curl process
+     * Helper to create a mock fetch response for RSS feed
      */
-    const createMockCurlProcess = (exitCode: number = 0, stderr: string = ""): EventEmitter => {
-      const mockProcess = new EventEmitter() as any;
-      mockProcess.stderr = new EventEmitter();
+    const createMockRssFetchResponse = (xmlContent: string) => ({
+      ok: true,
+      status: 200,
+      text: async () => xmlContent,
+      headers: {
+        get: () => null,
+      },
+    });
 
-      // Simulate async curl execution
-      setTimeout(() => {
-        if (stderr) {
-          mockProcess.stderr.emit("data", Buffer.from(stderr));
-        }
-        mockProcess.emit("close", exitCode);
-      }, 0);
+    /**
+     * Helper to create a mock fetch response for audio download
+     */
+    const createMockAudioFetchResponse = (options: {
+      ok?: boolean;
+      status?: number;
+      contentLength?: string;
+      bodyData?: Buffer;
+    } = {}) => {
+      const {
+        ok = true,
+        status = 200,
+        contentLength = "5000000",
+        bodyData = Buffer.from("fake audio data"),
+      } = options;
 
-      return mockProcess;
+      // Create a proper ReadableStream mock that works with Readable.fromWeb()
+      const mockBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(bodyData);
+          controller.close();
+        },
+      });
+
+      return {
+        ok,
+        status,
+        statusText: ok ? "OK" : "Error",
+        headers: {
+          get: (header: string) => {
+            if (header.toLowerCase() === "content-length") {
+              return contentLength;
+            }
+            return null;
+          },
+        },
+        body: mockBody,
+      } as any;
     };
 
     it("should successfully download RSS feed podcast (latest episode)", async () => {
@@ -134,10 +162,10 @@ describe("PodcastDownloaderService", () => {
           </item>
         </channel></rss>`;
 
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: async () => mockRssXml,
-      });
+      // Mock fetch: first call for RSS feed, second call for audio download
+      mockFetch
+        .mockResolvedValueOnce(createMockRssFetchResponse(mockRssXml))
+        .mockResolvedValueOnce(createMockAudioFetchResponse());
 
       // Mock podcast parser
       mockParsePodcast.mockImplementation((xml: string, callback: Function) => {
@@ -151,9 +179,6 @@ describe("PodcastDownloaderService", () => {
         });
       });
 
-      // Mock curl spawn
-      mockSpawn.mockReturnValue(createMockCurlProcess(0));
-
       // Mock file operations
       mockExistsSync.mockReturnValue(true);
       mockStatSync.mockReturnValue({ size: 5000000 }); // 5MB file
@@ -164,17 +189,12 @@ describe("PodcastDownloaderService", () => {
       const bucketKey = await service.downloadAndUpload(episodeUrl, bookmarkId);
 
       expect(bucketKey).toBe(`audio-${bookmarkId}-podcast.mp3`);
-      expect(mockSpawn).toHaveBeenCalledWith("curl", expect.arrayContaining([
-        "-L",
-        "-f",
-        "--max-time",
-        expect.any(String),
-        "--max-filesize",
-        expect.any(String),
-        "-o",
-        expect.stringContaining("podcast"),
+      expect(mockFetch).toHaveBeenCalledWith(
         "https://example.com/audio.mp3",
-      ]));
+        expect.objectContaining({
+          redirect: 'follow',
+        })
+      );
       expect(mockBucketUpload).toHaveBeenCalledWith(
         `audio-${bookmarkId}-podcast.mp3`,
         expect.any(Buffer),
@@ -247,8 +267,8 @@ describe("PodcastDownloaderService", () => {
         { target: "Episode 5: The Best Episode", score: 500 },
       ]);
 
-      // Mock curl spawn
-      mockSpawn.mockReturnValue(createMockCurlProcess(0));
+      // Mock fetch for audio download
+      mockFetch.mockResolvedValue(createMockAudioFetchResponse());
 
       // Mock file operations
       mockExistsSync.mockReturnValue(true);
@@ -279,17 +299,19 @@ describe("PodcastDownloaderService", () => {
       // Mock OpenGraph scraper to fail (though it shouldn't be called for RSS URLs)
       mockOgs.mockRejectedValue(new Error("Scraping failed"));
 
-      // Mock RSS feed fetch
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: async () => `<?xml version="1.0"?>
+      // Mock fetch: first for RSS, second for audio download
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => `<?xml version="1.0"?>
           <rss><channel>
             <item>
               <title>Latest Episode</title>
               <enclosure url="https://example.com/latest.mp3" type="audio/mpeg" />
             </item>
           </channel></rss>`,
-      });
+        })
+        .mockResolvedValueOnce(createMockFetchResponse());
 
       // Mock podcast parser
       mockParsePodcast.mockImplementation((xml: string, callback: Function) => {
@@ -302,9 +324,6 @@ describe("PodcastDownloaderService", () => {
           ],
         });
       });
-
-      // Mock curl spawn
-      mockSpawn.mockReturnValue(createMockCurlProcess(0));
 
       // Mock file operations
       mockExistsSync.mockReturnValue(true);
@@ -329,16 +348,19 @@ describe("PodcastDownloaderService", () => {
         feedUrl: episodeUrl,
       });
 
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: async () => `<?xml version="1.0"?>
+      // Mock fetch: first for RSS (success), second for audio download (fail)
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => `<?xml version="1.0"?>
           <rss><channel>
             <item>
               <title>Episode</title>
               <enclosure url="https://example.com/audio.mp3" type="audio/mpeg" />
             </item>
           </channel></rss>`,
-      });
+        })
+        .mockResolvedValueOnce(createMockAudioFetchResponse({ ok: false, status: 404 }));
 
       mockParsePodcast.mockImplementation((xml: string, callback: Function) => {
         callback(null, {
@@ -350,9 +372,6 @@ describe("PodcastDownloaderService", () => {
           ],
         });
       });
-
-      // Mock curl to fail
-      mockSpawn.mockReturnValue(createMockCurlProcess(1, "curl: (6) Could not resolve host"));
 
       mockExistsSync.mockReturnValue(false);
 
@@ -387,7 +406,7 @@ describe("PodcastDownloaderService", () => {
         });
       });
 
-      mockSpawn.mockReturnValue(createMockCurlProcess(0));
+      mockFetch.mockResolvedValue(createMockFetchResponse());
       mockExistsSync.mockReturnValue(true);
       mockStatSync.mockReturnValue({ size: 0 }); // Empty file
       mockUnlinkSync.mockReturnValue(undefined);
@@ -424,7 +443,7 @@ describe("PodcastDownloaderService", () => {
         });
       });
 
-      mockSpawn.mockReturnValue(createMockCurlProcess(0));
+      mockFetch.mockResolvedValue(createMockFetchResponse());
       mockExistsSync.mockReturnValue(true);
       mockStatSync.mockReturnValue({ size: 600 * 1024 * 1024 }); // 600MB (over 500MB limit)
       mockUnlinkSync.mockReturnValue(undefined);
@@ -617,7 +636,7 @@ describe("PodcastDownloaderService", () => {
         });
       });
 
-      mockSpawn.mockReturnValue(createMockCurlProcess(0));
+      mockFetch.mockResolvedValue(createMockFetchResponse());
       mockExistsSync.mockReturnValue(true);
       mockStatSync.mockReturnValue({ size: 5000000 });
       mockReadFileSync.mockReturnValue(Buffer.from("audio"));
@@ -639,24 +658,25 @@ describe("PodcastDownloaderService", () => {
         feedUrl: episodeUrl,
       });
 
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: async () => `<?xml version="1.0"?>
+      // Mock fetch: first for RSS (success), second for audio download (fail)
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => `<?xml version="1.0"?>
           <rss><channel>
             <item>
               <title>Episode</title>
               <enclosure url="https://example.com/audio.mp3" type="audio/mpeg" />
             </item>
           </channel></rss>`,
-      });
+        })
+        .mockResolvedValueOnce(createMockAudioFetchResponse({ ok: false, status: 500 }));
 
       mockParsePodcast.mockImplementation((xml: string, callback: Function) => {
         callback(null, {
           episodes: [{ title: "Episode", enclosure: { url: "https://example.com/audio.mp3" } }],
         });
       });
-
-      mockSpawn.mockReturnValue(createMockCurlProcess(1, "Download failed"));
       mockExistsSync.mockReturnValue(true);
       mockUnlinkSync.mockImplementation(() => {
         throw new Error("Cleanup failed");
