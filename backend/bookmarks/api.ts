@@ -587,16 +587,16 @@ export const fixArrayMetadata = api(
       // Fix bookmarks where metadata is an array - convert to proper object
       // Get the last non-null element from the array (most recent enrichment)
       await db.exec`
-        UPDATE bookmarks
+        UPDATE bookmarks AS b
         SET metadata = (
           SELECT elem
-          FROM jsonb_array_elements(metadata) WITH ORDINALITY AS t(elem, ordinality)
+          FROM jsonb_array_elements(b.metadata) WITH ORDINALITY AS t(elem, ordinality)
           WHERE elem IS NOT NULL AND elem != 'null'::jsonb
           ORDER BY ordinality DESC
           LIMIT 1
         )
-        WHERE user_id = ${userId}
-        AND jsonb_typeof(metadata) = 'array'
+        WHERE b.user_id = ${userId}
+        AND jsonb_typeof(b.metadata) = 'array'
       `;
 
       // Count how many were fixed
