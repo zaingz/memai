@@ -133,11 +133,21 @@ export async function handleAudioTranscription(event: AudioDownloadedEvent) {
   }
 }
 
-// Subscription to audio-downloaded topic
+/**
+ * Subscription to audio-downloaded topic
+ *
+ * Configuration:
+ * - ackDeadline: 600s (10 minutes) for large podcast transcription
+ *   Large files (100MB+) need time to:
+ *   1. Download from bucket
+ *   2. Upload to Deepgram
+ *   3. Wait for Deepgram to transcribe
+ */
 export const audioTranscriptionSubscription = new Subscription(
   audioDownloadedTopic,
   "audio-transcription-processor",
   {
     handler: handleAudioTranscription,
+    ackDeadline: "600s", // 10 minutes for large podcast transcription (107MB can take 5-10 minutes)
   }
 );
